@@ -119,7 +119,7 @@
 								<goal>jar</goal>
 							</goals>
 							<configuration> <!-- add this to disable checking -->
-								<additionalparam>-Xdoclint:none</additionalparam>
+								<additionalOptions>-Xdoclint:none</additionalOptions>
 								<failOnError>false</failOnError>
 								<failOnWarnings>false</failOnWarnings>
 							</configuration>
