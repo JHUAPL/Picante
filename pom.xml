@@ -5,7 +5,7 @@
 
 	<groupId>edu.jhuapl.ses</groupId>
 	<artifactId>picante</artifactId>
-	<version>0.0.1</version>
+	<version>1.0.0</version>
 	<packaging>jar</packaging>
 
 	<name>picante</name>
@@ -30,6 +30,13 @@
 			<id>HariNairJHUAPL</id>
 			<name>Hari Nair</name>
 			<email>Hari.Nair@jhuapl.edu</email>
+			<organization>JHUAPL</organization>
+			<organizationUrl>https://www.jhuapl.edu/</organizationUrl>
+		</developer>
+		<developer>
+			<id>turnerfs</id>
+			<name>F. Scott Turner</name>
+			<email>Scott.Turner@jhuapl.edu</email>
 			<organization>JHUAPL</organization>
 			<organizationUrl>https://www.jhuapl.edu/</organizationUrl>
 		</developer>
