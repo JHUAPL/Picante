@@ -18,11 +18,13 @@ It is released under the [MIT](LICENSE.md) License.
 
 ## Maven Coordinates
 
+Find the latest version at [Maven Central](https://central.sonatype.com/artifact/edu.jhuapl.ses/picante).
+
 ```
 <dependency>
     <groupId>edu.jhuapl.ses</groupId>
     <artifactId>picante</artifactId>
-    <version>0.0.0</version>
+    <version>1.0.0</version>
 </dependency>
 ```
 
