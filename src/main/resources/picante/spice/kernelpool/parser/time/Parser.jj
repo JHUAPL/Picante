@@ -1,0 +1,2559 @@
+/**
+ * This parser is an attempt to mimic the NAIF/SPICELIB routine TPARSE.
+ * We do not need to consider spaces, commas, parentheses, or single quotes
+ * for this particular parser, as it will be supporting the kernel pool 
+ * loader and nothing else.
+ *
+ * The only time modifiers that we need to consider (since this is 
+ * effectively implementing the TPARSE call inside LDPOOL) are:
+ *    ERA   (AD, BC)
+ *    WEEKDAY (which is just ignored)
+ * The time system modifier and the time zone modifiers are to 
+ * result in errors being generated, if present.
+ *
+ * When building the javadoc for the parser, mention that under no
+ * circumstances is the user to use ANY other method in this parser
+ * than the parse(String time) method.  Time strings supplied to the
+ * parser via any other interface will result in potential corruption
+ * of the cached static token manager.
+ */
+
+options {
+   LOOKAHEAD=1;
+   SUPPORT_CLASS_VISIBILITY_PUBLIC=false;
+   STATIC=false;
+// DEBUG_PARSER=true; 
+}
+
+PARSER_BEGIN(Parser)
+package picante.spice.kernelpool.parser.time;
+
+import java.io.Reader;
+import java.io.StringReader;
+
+/**
+* This class is intended for use by the kernel pool loader ONLY.  Do not
+* use any method other than {@link #parse(String)}.  Time strings supplied to the
+* parser via any other interface will result in potential corruption
+* of the cached static token manager.
+* <p>
+* Use the TParser class for more general time string parsing.
+*/
+class Parser {
+
+   /**
+    *  This number was taken from the SPICELIB routine J2000,
+    *  and is the number of days between the Julian date 0.0
+    *  and the reference epoch, Jan 01 2000 12:00.
+    */
+   private static final double J2000 = 2451545.0;
+	
+   /**
+    *  This number was taken from the SPICELIB routine SPD.
+    */ 
+   private static final double SECONDS_PER_DAY = 86400.0;
+	
+   /**
+    *  This number is used to define the default base century
+    *  in which two digit years are to start.
+    */
+   private static final int DEFAULT_CENTURY = 1900;
+	
+   /**
+    *  The two digit years begin at this lower bound.  That is
+    *  if a year is specified '69-JAN-01 it is processed to
+    *  1969-JAN-01.  Thus, anything between [0,68] is converted
+    *  to [2000,2068].
+    */
+   private static final int CENTURY_LOWER_BOUND = 1969;
+    
+   /**
+    *  Parse a time string into seconds past the J2000 reference epoch on 
+    *  a formal calendar (86400 seconds per day).
+    *
+    *  @param  timeString  a string, containing a formal time specification.
+    *
+    *  @return the number of seconds, past the J2000 reference epoch, on a
+    *          formal calendar (86400 seconds per day).  Note: the J2000 
+    *          reference epoch is: January 1, 2000 12:00:00.000.
+    */ 
+   public double parse ( String timeString ) throws ParseException {
+      initialize(new StringReader(timeString));
+      
+      /*
+       *  Now that the parser is initialized (and thus the token manager)
+       *  reset the special token lists, from any of our last parsing 
+       *  attempts.  Although it seemed feasible to do this in the parseTime
+       *  production, just prior to the return statement, this would not
+       *  be reset if any ParseExceptions were thrown in the process of
+       *  analyzing the string.  Here, we're assured it will be clean 
+       *  prior to invoking the parser.
+       */
+      token_source.resetSpecialTokenLists();
+
+      try {
+
+         return parseTime();
+
+      } catch ( ParseException pe ) {
+      	
+         /*
+          *  The first pass failed, try replacing dashes and single
+          *  slashes with whitespace.  Note: this is a slightly 
+          *  complicated process, as we have to preserve the double
+          *  slash day of year delimiter.
+          */
+          String newTime = timeString.replaceAll("-", " ");
+          newTime = newTime.replaceAll("//", "-");
+          newTime = newTime.replaceAll("/", " ");
+          newTime = newTime.replaceAll("-", "//");
+          
+         /*
+          *  Initialize the parser with the newTime string, and try
+          *  again.
+          */
+         initialize(new StringReader(newTime));
+         token_source.resetSpecialTokenLists();
+         
+         try {
+	        return parseTime();
+         } catch ( ParseException secondpe ) {
+         	throw new ParseException ( "Both primary and secondary parsing " +
+         	   "passes have failed.  Primary exception was: " + pe.getMessage() +
+         	   " Secondary exception was: " + secondpe.getMessage() );
+         }
+      }
+   }
+   
+   /**
+    *  This private method is used to initialize and reinitialize the 
+    *  static parser object.  It provides a consolidated access point
+    *  for the maintenance of the single instance of the parser.
+    */   
+   private void initialize( Reader r ) {
+      ReInit( r );
+   }
+   
+   /**
+    *  Convert a Julian date specification of time on a formal calendar
+    *  to seconds past the J2000 reference epoch.
+    *
+    *  @param d  the Julian date to convert to seconds past J2000.
+    *
+    *  @return  the number of seconds ellapsed from J2000 on a formal
+    *           calendar.
+    */
+   private static double julianDateToSecondsPastJ2000( double d ) {
+      return ( d - J2000 ) * SECONDS_PER_DAY;
+   }
+    
+   /**
+    *  Convert a year less than 100 to a year between 1969 and 2068.
+    *
+    *  This conversion is the default one employed by SPICE, though it
+    *  is configurable.  Note: input years supplied to this routine 
+    *  that lie outside the range [0,99] are simply returned untouched.
+    *  This permits the routine to be used thusly:
+    *  <pre>
+    *     year = processTwoDigitYears(year);
+    *  </pre>
+    *  without regard for whether year is less than 100 or not.
+    */
+   private static int processTwoDigitYears ( int year ) {
+   	
+      if ( ( year >= 100 ) || ( year < 0 ) ) {
+         return year;
+      }
+      year = year + DEFAULT_CENTURY;
+      
+      if ( year < CENTURY_LOWER_BOUND ) {
+         year += 100;
+      }
+      
+      return year;
+   }
+    
+    /**
+     *  Apply the Muller-Wimberly formula to convert a year and day of
+     *  year to number of seconds past the J2000 reference epoch on a 
+     *  formal calendar (86400 seconds per day).
+     *
+     *  @param year  an integer containing the fully qualified year to
+     *               convert.
+     *  @param dayOfYear  an integer containing the number of days in the
+     *                    specified year.
+     *
+     *  @return  the number of seconds past the J2000 reference epoch on
+     *           a formal calendar (86400 seconds per day).
+     */
+    private static double mullerWimberly( int year, int dayOfYear ) {
+    	
+       /*
+        *  Due to the way the Muller-Wimberly formula is implemented
+        *  in the year, month, day routine, we can simply evaluate 
+        *  the function at month 1, day dayOfYear and obtain the 
+        *  correct result.
+        */
+       return mullerWimberly(year, 1, dayOfYear);
+    }
+    
+    /**
+     *  Apply the Muller-Wimberly formula to convert year, month, and day
+     *  to number of seconds past the J2000 reference epoch on a formal 
+     *  calendar (86400 seconds per day).
+     *
+     *  Unusual inputs may be supplied to this routine, and it will process
+     *  the loose interpretations of day and month correctly.  That is to say
+     *  as long as day and month are positive integers, this routine will
+     *  convert the time accordingly.  The 13th month of year 1900, would be
+     *  equivalent to the 1st month of year 1901, etc.
+     *
+     *  @param year  an integer containing the fully qualified year to
+     *               convert.
+     *  @param month  an integer containing the month of year to convert.
+     *  @param day  an integer containing the day of month to convert.
+     *
+     *  @return  the number of seconds past the J2000 reference epoch on
+     *           a formal calendar (86400 seconds per day).
+     */
+    private static double mullerWimberly ( int year, int month, int day ) {
+
+       boolean adjust=false;
+       int temp;
+       int q=0;
+       
+       /*
+        *  The Muller-Wimberly formula does not work for years
+        *  less than 0.  So we boost the year by an appropriate
+        *  multiple of 400, and then subtract the appropriate 
+        *  number of days later.
+        */
+       if ( year < 1 ) { 
+          adjust=true;
+          temp=year;
+          
+          /*
+           *  Compute the integer quotient and non-negative remainder
+           *  of temp and 400.
+           */
+          q = temp/400;
+          year = temp - 400*q;
+          
+          if ( year < 0 ) {
+             q = q-1;
+             year = year + 400;
+          }
+          
+          year = year + 400;
+          q = q-1;
+       }
+     
+       /*
+        *  Now apply the Muller-Wimberly formula.
+        */
+       day = 367*year - 7*(year+(month+9)/12)/4
+                      - 3*((year+(month-9)/7)/100+1)/4
+                      + 275*month/9 + day - 730516;  
+                   
+       /*
+        *  Adjust day by the appropriate multiple of 400 years, 
+        *  if necessary.
+        */
+       if ( adjust ) {
+          day = day + q*(400*365 + 97);
+       }
+       
+       /*
+        *  Return the number of seconds corresponding to day.
+        *  Note: we have to subtract 0.5 from day, because our
+        *  J2000 reference epoch starts at noon, not midnight.
+        */
+       return ((double) day - 0.5)*SECONDS_PER_DAY;
+    }
+    
+    /**
+     *  Correct a year for an era specification, if present in the
+     *  TokenManager's era list.
+     *
+     *  @param year  The year specification to correct.
+     *
+     *  @return  the year corrected for any era specification, 
+     *           namely (1-year) if the era "B.C." is specified.
+     *           Otherwise it simply returns the input year.
+     *
+     *  @throws  ParseException if the TokenManager has recorded 
+     *           more than one era specification, or if the recorded
+     *           specification is unknown.
+     */
+    private int correctYearForEra(int year) throws ParseException {
+       
+       if ( token_source.era.size() == 0 ) {
+          return year;
+       }
+       else if ( token_source.era.size() > 1 ) { 
+          throw new ParseException ( "Multiple era specifications supplied." );
+       }
+       
+       if ( token_source.era.get(0).equals("AD") ) {
+          return year;
+       }
+       else if ( token_source.era.get(0).equals("BC") ) {
+          return 1 - year;
+       }
+       else {
+          throw new ParseException ( "Unrecognized era specification: [" + 
+             token_source.era.get(0) + "] supplied." );
+       }
+    }
+    
+    /**
+     *  Check to see if more than one weekday was specified.
+     *  
+     *  @throws  ParseException if more than one weekday appears in the
+     *           token manager's weekday list.
+     */
+    private void checkWeekday() throws ParseException {
+
+       if ( token_source.weekday.size() > 1 ) {
+          throw new ParseException ( "Multiple weekdays specified.  This " +
+              "is explicitly forbidden by the parser." );
+       }
+    }
+    
+}
+
+/**
+ *  Simple class to capture multiple values returned when parsing
+ *  year and day of year from the same non-terminal.
+ */
+class YearDayOfYear {
+   int year;
+   int dayOfYear;
+}
+    
+/**
+ *  Simple class to capture multiple values returned when parsing
+ *  year, month, day from the same non-terminal.
+ */
+class YearMonthDay {
+   int year;
+   int month;
+   int day;
+}
+
+PARSER_END(Parser)
+
+TOKEN_MGR_DECLS:
+{
+   final List<String> weekday = new ArrayList<String>();
+   final List<String> era = new ArrayList<String>();
+   
+   String s;
+   
+   void resetSpecialTokenLists() {
+      weekday.clear();
+      era.clear();
+   }
+}
+
+TOKEN: { < NUMBER: (<DIGIT>)+ <PERIOD> (<DIGIT>)* > }
+
+TOKEN: { < QUOTED_YEAR: <QUOTE> (<DIGIT>){1,2} > 
+	     {
+	        /*
+	         *  Strip the leading "'" character from the token,
+	         *  so the parser receives only the integer components.
+	         */
+	        matchedToken.image = image.substring(1);
+	     }
+       }
+
+TOKEN: { < YEAR: (<DIGIT>){4,} > 
+	     | < UNSIGNED_INTEGER: (<DIGIT>){1,3} >
+	       | < #DIGIT: ["0" - "9"] >    }
+	       
+SKIP: { < BLANK: (<WHITESPACE>)+ >
+	       | < #WHITESPACE: [" ", "\t"] > }
+
+SKIP: { < COMMA: "," > }
+
+/*
+ *  This token is used to recognize, and report errors, when multiple
+ *  commas appear next to one another erroneously.  This happens, 
+ *  because this token will never be used in any non-terminal production.
+ */
+TOKEN: { < TWOCOMMA: "," (<BLANK>)? "," > }
+	       
+TOKEN [IGNORE_CASE]: { < JD: "JD" > }
+	       
+TOKEN [IGNORE_CASE]: { < ISOT: "T" > }
+
+SPECIAL_TOKEN [IGNORE_CASE]: {  < AD:   "AD"
+	                                  | "A.D."
+	                                  | "(" (<BLANK>)? "A.D." (<BLANK>)?")" 
+	                                  | "(" (<BLANK>)? "AD" (<BLANK>)? ")" >
+	                            { era.add("AD"); }
+	                          | < BC:   "BC"
+	                                  | "B.C." 
+	                                  | "(" (<BLANK>)? "B.C." (<BLANK>)? ")" 
+	                                  | "(" (<BLANK>)? "BC" (<BLANK>)? ")"  >
+	                            { era.add("BC"); } }
+
+SPECIAL_TOKEN [IGNORE_CASE]: {  < MON:  "MON" 
+	                             | "MOND" 
+	                             | "MONDA" 
+	                             | "MONDAY"
+	                             | "(" (<BLANK>)? "MON" (<BLANK>)? ")" 
+	                             | "(" (<BLANK>)? "MOND" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "MONDA" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "MONDAY" (<BLANK>)? ")" > 
+	                            { weekday.add("MONDAY"); }
+	                          | < TUE:  "TUE" 
+	                             | "TUES" 
+	                             | "TUESD" 
+	                             | "TUESDA" 
+	                             | "TUESDAY"
+	                             | "(" (<BLANK>)? "TUE" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "TUES" (<BLANK>)? ")" 
+	                             | "(" (<BLANK>)? "TUESD" (<BLANK>)? ")" 
+	                             | "(" (<BLANK>)? "TUESDA" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "TUESDAY" (<BLANK>)? ")" >
+	                            { weekday.add("TUESDAY"); }
+	                          | < WED:  "WED"
+	                             | "WEDN"
+	                             | "WEDNE" 
+	                             | "WEDNES"
+	                             | "WEDNESD"
+	                             | "WEDNESDA"
+	                             | "WEDNESDAY"
+	                             | "(" (<BLANK>)? "WED" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "WEDN" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "WEDNE" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "WEDNES" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "WEDNESD" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "WEDNESDA" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "WEDNESDAY" (<BLANK>)? ")" >
+	                            { weekday.add("WEDNESDAY"); }
+	                          | < THU:  "THU"
+	                             | "THUR"
+	                             | "THURS"
+	                             | "THURSD"
+	                             | "THURSDA"
+	                             | "THURSDAY"
+	                             | "(" (<BLANK>)? "THU" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "THUR" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "THURS" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "THURSD" (<BLANK>)? ")"
+	                             | "(" (<BLANK>)? "THURSDA" (<BLANK>)? ")"	                             	                             	                             
+	                             | "(" (<BLANK>)? "THURSDAY" (<BLANK>)? ")" >
+                                { weekday.add("THURSDAY"); }
+                              | < FRI:  "FRI"
+                                 | "FRID"
+                                 | "FRIDA"
+                                 | "FRIDAY"
+                                 | "(" (<BLANK>)? "FRI" (<BLANK>)? ")"
+                                 | "(" (<BLANK>)? "FRID" (<BLANK>)? ")"
+                                 | "(" (<BLANK>)? "FRIDA" (<BLANK>)? ")"
+                                 | "(" (<BLANK>)? "FRIDAY" (<BLANK>)? ")" >
+                                { weekday.add("FRIDAY"); }
+                              | < SAT:  "SAT"
+                                 | "SATU"
+                                 | "SATUR"
+                                 | "SATURD"
+                                 | "SATURDA"
+                                 | "SATURDAY"
+                                 | "(" (<BLANK>)? "SAT" (<BLANK>)? ")"
+                                 | "(" (<BLANK>)? "SATU" (<BLANK>)? ")"
+                                 | "(" (<BLANK>)? "SATUR" (<BLANK>)? ")"
+                                 | "(" (<BLANK>)? "SATURD" (<BLANK>)? ")"
+                                 | "(" (<BLANK>)? "SATURDA" (<BLANK>)? ")"
+                                 | "(" (<BLANK>)? "SATURDAY" (<BLANK>)? ")" >
+                                { weekday.add("SATURDAY"); }
+                              | < SUN:  "SUN"
+                                 | "SUND"
+                                 | "SUNDA"
+                                 | "SUNDAY" 
+                                 | "(" (<BLANK>)? "SUN" (<BLANK>)? ")"
+                                 | "(" (<BLANK>)? "SUND" (<BLANK>)? ")"
+                                 | "(" (<BLANK>)? "SUNDA" (<BLANK>)? ")"
+                                 | "(" (<BLANK>)? "SUNDAY" (<BLANK>)? ")" >
+                                { weekday.add("SUNDAY"); }    }
+                                
+TOKEN [IGNORE_CASE]: {  < JAN:  "JAN" | "JANU" | "JANUA" | "JANUAR" 
+	                          | "JANUARY" > 
+	                  | < FEB:  "FEB" | "FEBR" | "FEBRU" | "FEBRUA"
+	                          | "FEBRUAR" | "FEBRUARY" >
+	                  | < MAR:  "MAR" | "MARC" | "MARCH" >
+	                  | < APR:  "APR" | "APRI" | "APRIL" >
+	                  | < MAY:  "MAY" >
+	                  | < JUN:  "JUN" | "JUNE" >
+	                  | < JUL:  "JUL" | "JULY" >
+	                  | < AUG:  "AUG" | "AUGU" | "AUGUS" | "AUGUST" >
+	                  | < SEP:  "SEP" | "SEPT" | "SEPTE" | "SEPTEM" 
+	                          | "SEPTEMB" | "SEPTEMBE" | "SEPTEMBER" >
+	                  | < OCT:  "OCT" | "OCTO" | "OCTOB" | "OCTOBE" 
+	                          | "OCTOBER" >
+	                  | < NOV:  "NOV" | "NOVE" | "NOVEM" | "NOVEMB" 
+	                          | "NOVEMBE" | "NOVEMBER" >
+	                  | < DEC:  "DEC" | "DECE" | "DECEM" | "DECEMB"
+	                          | "DECEMBE" | "DECEMBER" > }
+
+TOKEN: { <YEARAD: ( <YEAR> | <UNSIGNED_INTEGER> ) <AD> > 
+	     { 
+	        era.add("AD"); 
+	        
+            s = image.toString();
+	        
+	        /*
+	         *  Clean up the token, by stripping everything off the
+	         *  end of the token but the digits themselves.
+	         */
+	        matchedToken.image = 
+	           s.replace(s.replaceAll("^\\d+",""),"");
+	     } 
+	   }
+TOKEN: { <YEARBC: ( <YEAR> | <UNSIGNED_INTEGER> ) <BC> >
+	     { 
+	        era.add("BC");
+	        
+	        s = image.toString();
+	        
+	        /*
+	         *  Clean up the token, by stripping everything off the
+	         *  end of the token but the digits themselves.
+	         */
+	        matchedToken.image = 
+	           s.replace(s.replaceAll("^\\d+",""),"");
+	     }
+       }
+
+TOKEN: {  < DASH: "-" > 
+	    | < COLON: ":" >
+	    | < PERIOD: "." >
+	    | < DAYOFYEAR: "::" | "//" >
+	    | < SLASH: "/" >
+	    | < QUOTE: "'" > }
+
+/*
+ *  Top-level non-terminal that handles all of the time-strings managed
+ *  by this parser.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double parseTime() : 
+{ 
+   double d; 
+}
+{
+   ( LOOKAHEAD(julianDate()) 
+      d=julianDate()
+   | 
+     LOOKAHEAD(isoTime())
+      d=isoTime()
+   |
+      d=calendarTime()
+   )
+   { 
+   	  /*
+   	   *  Check if multiple weekdays were captured by the token manager.
+   	   *  This method simply throws a ParseException if something is wrong.
+   	   */
+   	   checkWeekday();
+   	
+      return d; 
+   }
+}
+
+/*
+ *  Parse a Julian Date formatted time string.
+ * 
+ *  This non-terminal attempts to parse Julian Date time strings in 
+ *  the SPICE kernel pool, tparse format.  The token <JD> must appear
+ *  in the stream, either before or after a floating point number.
+ *  Negative floating point numbers have to be handled in a special
+ *  way, by the parser, rather than the token manager due to the 
+ *  fact that dashes are reserved characters in other time formats
+ *  supported by this parser.
+ *
+ *  The basic acceptable formats for this production are:
+ *     -123124.123JD  or JD-1231241.123
+ *
+ *  The floating point component may be omitted and it will still 
+ *  parse properly.
+ *
+ *  @return  seconds past the J2000 reference epoch on a formal 
+ *           86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double julianDate() :
+{
+   Token t;
+   double d;
+   boolean negate=false;
+}
+{
+   /*
+    *  There are two nearly identical expressions that are handled by
+    *  this non-terminal.  One where JD precedes the number, the other
+    *  where it follows.  Use the boolean negate to record the presence
+    *  of a minus sign in the expression.
+    */
+   ( <JD> 
+      ( <DASH> { negate = true;} )? 
+      ( t=<UNSIGNED_INTEGER> | t=<YEAR> | t=<NUMBER> ) 
+      { 
+         d=Double.parseDouble(t.image); 
+      }
+    |
+      ( <DASH> { negate = true;} )? 
+      ( t=<UNSIGNED_INTEGER> | t=<YEAR> | t=<NUMBER> ) 
+      { 
+         d=Double.parseDouble(t.image);
+      }
+      <JD> 
+   ) <EOF>
+   { 
+   	  if ( token_source.weekday.size() != 0 ) {
+   	     throw new ParseException ( "Found weekday specification: [" +
+   	        token_source.weekday.get(0) + "].  Weekday specifications " +
+   	        "are not permitted in Julian Date time strings." );
+   	  }
+   	
+      if ( token_source.era.size() != 0 ) {
+         throw new ParseException ( "Found era specification: [" +
+            token_source.era.get(0) + "].  Era specifications are " +
+            "not permitted in Julian Date time strings." );
+      }
+
+      if ( negate ) {
+         d = -d;
+      }
+      return julianDateToSecondsPastJ2000(d);
+   }
+}
+
+/*
+ *  Parse an ISO formatted time string.
+ *
+ *  This non-terminal attempts to parse ISO specification formatted
+ *  time strings in the SPICE kernel pool, tparse format.  The token
+ *  <ISOT> must appear in the stream, and further must separate the
+ *  year and day of year specification (or month/day) from the supplied
+ *  hours, minutes and seconds, if any.
+ *
+ *  Due to the nature of this format, fairly strict adherence to it is
+ *  required.  SPICE does allow a semi-lax interpretation of each of the 
+ *  fields in the time string.  That is months, days, day of year, hours,
+ *  minutes, and seconds may be specified in excess of their strict 
+ *  ranges, but each must be less than four digits to the left of the
+ *  decimal point.
+ *
+ *  The range of formats handled by this non-terminal are:
+ *  <pre>
+ *             Y-i-iT ........ YmD
+ *             Y-i-iTi ....... YmDH
+ *             Y-i-iTi:i ..... YmDHM
+ *             Y-i-iTi:i:i ... YmDHMS
+ *             Y-i-iTi:i:n ... YmDHMS
+ *             Y-i-iTi:n ..... YmDHM
+ *             Y-i-iTn ....... YmDH
+ *             Y-iT .......... Yy
+ *             Y-iTi ......... YyH
+ *             Y-iTi:i ....... YyHM
+ *             Y-iTi:i:i ..... YyHMS
+ *             Y-iTi:i:n ..... YyHMS
+ *             Y-iTi:n ....... YyHM
+ *             Y-iTn ......... YyH
+ *             i-i-iT ........ YmD
+ *             i-i-iTi ....... YmDH
+ *             i-i-iTi:i ..... YmDHM
+ *             i-i-iTi:i:i ... YmDHMS
+ *             i-i-iTi:i:n ... YmDHMS
+ *             i-i-iTi:n ..... YmDHM
+ *             i-i-iTn ....... YmDH
+ *             i-iT .......... Yy
+ *             i-iTi ......... YyH
+ *             i-iTi:i ....... YyHM
+ *             i-iTi:i:i ..... YyHMS
+ *             i-iTi:i:n ..... YyHMS
+ *             i-iTi:n ....... YyHM
+ *             i-iTn ......... YyH
+ *   </pre>
+ *   where:
+ *   <pre>
+ *             i  ---  unsigned integer
+ *             n  ---  unsigned float
+ *             Y  ---  Year
+ *             m  ---  Month
+ *             D  ---  Day of Month
+ *             y  ---  Day of Year
+ *             H  ---  Hour
+ *             M  ---  Minute
+ *             S  ---  Second
+ *   </pre>
+ *
+ *   Note: two digit years, the leading i specified above, are interpretted 
+ *   by the parser as occurring between 1969 and 2068.
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double isoTime() :
+{ 
+   YearDayOfYear yd;
+   YearMonthDay ymd;
+   double d=0;
+   double e; 
+}
+{
+   ( LOOKAHEAD(isoYearMonthDay()) 
+     ymd=isoYearMonthDay() { d=mullerWimberly(ymd.year, ymd.month, ymd.day);  }
+   | yd=isoYearDay() { d=mullerWimberly(yd.year, yd.dayOfYear);  } )
+   ( e=hourMinuteSecond() { d+=e;  } )? <EOF>
+   { 
+      if ( token_source.weekday.size() != 0 ) {
+         throw new ParseException( "Found weekday specification: [" + 
+            token_source.weekday.get(0) + "].  Weekday specifications " +
+            "are not permitted in ISO time strings." );
+      }
+      
+      if ( token_source.era.size() != 0 ) { 
+         throw new ParseException( "Found era specification: [" +
+            token_source.era.get(0) + "].  Era specifications are " +
+            "not permitted in ISO time strings." );
+      }
+      
+      return d; 
+   }
+   
+}
+
+/*
+ *  Parse the year, month, and day leading part of an ISO time specification.
+ *
+ *  @return  a YearMonthDay containing the year, month, and day parsed out
+ *           of the leading tokens in the ISO time string.  Note: the year
+ *           field of the YearMonthDay object is, if 2 digits, properly 
+ *           converted to the [1969,2068] range.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+YearMonthDay isoYearMonthDay() :
+{ 
+	YearMonthDay ymd = new YearMonthDay();
+	Token t;
+}
+{
+   ( t=<UNSIGNED_INTEGER> | t=<YEAR> ) 
+   { 
+      ymd.year = processTwoDigitYears(Integer.parseInt(t.image)); 
+   }
+   <DASH>
+   t=<UNSIGNED_INTEGER> { ymd.month = Integer.parseInt(t.image); }
+   <DASH> 
+   t=<UNSIGNED_INTEGER> { ymd.day = Integer.parseInt(t.image); }
+   <ISOT>
+   { return ymd; }
+}
+
+/*
+ *  Parse the year and day of year leading part of an ISO time specification.
+ *
+ *  @return  a YearDayOfYear containing the year and day of year parsed out
+ *           of the leading tokens in the ISO time string.  Note: the year
+ *           field of the YearDayOfYear object is, if 2 digits, properly 
+ *           converted to the [1969,2068] range.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+YearDayOfYear isoYearDay() :
+{
+   YearDayOfYear yd = new YearDayOfYear();
+   Token t;
+}
+{ 
+   ( t=<UNSIGNED_INTEGER> | t=<YEAR> ) 
+   { 
+      yd.year = processTwoDigitYears(Integer.parseInt(t.image)); 
+   }
+   <DASH>
+   t=<UNSIGNED_INTEGER> { yd.dayOfYear = Integer.parseInt(t.image); }
+   <ISOT>
+   {return yd;}
+}
+
+/*
+ *  Describe time formats supported by calendarTime in detail.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double calendarTime() :
+{
+   double d;
+}
+{
+   (   LOOKAHEAD(strictYearDayOfYearDelimiter())
+       d = strictYearDayOfYearDelimiter() { return d; }
+     | LOOKAHEAD(integerMinusDayOfYearDelimiter())
+       d = integerMinusDayOfYearDelimiter() { return d; } 
+     | LOOKAHEAD(integerDayOfYearDelimiter())
+       d = integerDayOfYearDelimiter() { return d; }
+     | LOOKAHEAD(dayOfYearStrictYearDelimiter())
+       d = dayOfYearStrictYearDelimiter() { return d; }
+     | LOOKAHEAD(spaceDelimitedStrictYearMonthDay())
+       d = spaceDelimitedStrictYearMonthDay() { return d; }
+     | LOOKAHEAD(dashedMonthDayStrictYear())
+       d = dashedMonthDayStrictYear() { return d; }
+     | LOOKAHEAD(slashedMonthDayStrictYear())
+       d = slashedMonthDayStrictYear() { return d; }
+     | LOOKAHEAD(slashedMonthDayInteger())
+       d = slashedMonthDayInteger() { return d; }
+     | LOOKAHEAD(trailingDashedMonthDayStrictYear())
+       d = trailingDashedMonthDayStrictYear() { return d; }
+     | LOOKAHEAD(trailingSlashedMonthDayStrictYear())
+       d = trailingSlashedMonthDayStrictYear() { return d; }
+     | LOOKAHEAD(trailingSlashedMonthDayInteger())
+       d = trailingSlashedMonthDayInteger() { return d; }
+     | LOOKAHEAD(spaceDelimitedMonthDayStrictYear())
+       d = spaceDelimitedMonthDayStrictYear() { return d; }
+     | LOOKAHEAD(spaceDelimitedStrictYearDayNamedMonth())
+       d = spaceDelimitedStrictYearDayNamedMonth() { return d; }
+     | LOOKAHEAD(spaceDelimitedStrictYearNamedMonthDay())
+       d = spaceDelimitedStrictYearNamedMonthDay() { return d; }
+     | LOOKAHEAD(spaceDelimitedIntegerDayNamedMonth())
+       d = spaceDelimitedIntegerDayNamedMonth() { return d; }
+     | LOOKAHEAD(spaceDelimitedDayNamedMonthStrictYear())
+       d = spaceDelimitedDayNamedMonthStrictYear() { return d; }
+     | LOOKAHEAD(spaceDelimitedIntegerNamedMonthDay())
+       d = spaceDelimitedIntegerNamedMonthDay() { return d; }
+     | LOOKAHEAD(spaceDelimitedNamedMonthDayStrictYear())
+       d = spaceDelimitedNamedMonthDayStrictYear() { return d; }
+     | LOOKAHEAD(spaceDelimitedNamedMonthDayInteger())
+       d = spaceDelimitedNamedMonthDayInteger() { return d; }
+     | LOOKAHEAD(dayNamedMonthSplitStrictYear())
+       d = dayNamedMonthSplitStrictYear() { return d; }
+     | LOOKAHEAD(namedMonthDaySplitStrictYear())
+       d = namedMonthDaySplitStrictYear() { return d; }
+     | LOOKAHEAD(trailingDayNamedMonthStrictYear())
+       d = trailingDayNamedMonthStrictYear() { return d; }
+     | LOOKAHEAD(trailingNamedMonthDayStrictYear())
+       d = trailingNamedMonthDayStrictYear() { return d; }
+     | LOOKAHEAD(yearNamedMonthDecimalDay())
+       d = yearNamedMonthDecimalDay() { return d; }
+     | LOOKAHEAD(yearDecimalDayNamedMonth())
+       d = yearDecimalDayNamedMonth() { return d; }
+     | d = namedMonthDecimalDayYear() { return d; }
+     | d = decimalDayNamedMonthStrictYear() { return d; }
+     | d = monthDecimalDayStrictYear() { return d; }
+     | d = strictYearMonthDecimalDay() { return d; }
+
+   )
+}
+
+
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      Y-i/........... Yy   
+ *      Y-i/i:i........ YyHM 
+ *      Y-i/i:i:i...... YyHMS
+ *      Y-i/i:i:n...... YyHMS
+ *      Y-i/i:n........ YyHM 
+ *      Y-id........... Yy   
+ *      Y-idi:i........ YyHM 
+ *      Y-idi:i:i...... YyHMS
+ *      Y-idi:i:n...... YyHMS
+ *      Y-idi:n........ YyHM 
+ *      Yid............ Yy   
+ *      Yidi:i......... YyHM  
+ *      Yidi:i:i....... YyHMS 
+ *      Yidi:i:n....... YyHMS  
+ *      Yidi:n......... YyHM    
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+double strictYearDayOfYearDelimiter() :
+{
+   int year;
+   int dayOfYear;   
+   double d;
+   double e=0;
+   Token t;
+}
+{
+   year=strictYear() ( ( <DASH> 
+   t=<UNSIGNED_INTEGER> { dayOfYear = Integer.parseInt(t.image); } 
+   ( <SLASH> | <DAYOFYEAR> ) ) | 
+   ( t=<UNSIGNED_INTEGER> { dayOfYear = Integer.parseInt(t.image); } 
+     <DAYOFYEAR> ) )
+   ( e=integerHourMinuteSecond() )? <EOF>
+   {
+      /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, dayOfYear);
+      
+      return d+e;
+   }
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      i-i/i:i........ YyHM 
+ *      i-i/i:i:i...... YyHMS
+ *      i-i/i:i:n...... YyHMS
+ *      i-i/i:n........ YyHM 
+ *      i-idi:i........ YyHM 
+ *      i-idi:i:i...... YyHMS
+ *      i-idi:i:n...... YyHMS
+ *      i-idi:n........ YyHM 
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double integerMinusDayOfYearDelimiter() :
+{
+   int year;
+   int dayOfYear;   
+   double d;
+   double e=0;
+   Token t;
+}
+{
+   t=<UNSIGNED_INTEGER> { year = Integer.parseInt(t.image); } <DASH> 
+   t=<UNSIGNED_INTEGER> { dayOfYear = Integer.parseInt(t.image); } 
+   ( <SLASH> | <DAYOFYEAR> )
+   e=integerHourMinuteSecond() <EOF>
+   {
+      /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, dayOfYear);
+      
+      return d+e;
+   }
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      iid............ Yy
+ *      iidi:i......... YyHM
+ *      iidi:i:i....... YyHMS
+ *      iidi:i:n....... YyHMS
+ *      iidi:n......... YyHM 
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+double integerDayOfYearDelimiter() :
+{
+   int year;
+   int dayOfYear;   
+   double d;
+   double e=0;
+   Token t;
+}
+{
+   t=<UNSIGNED_INTEGER> { year = Integer.parseInt(t.image); }
+   t=<UNSIGNED_INTEGER> { dayOfYear = Integer.parseInt(t.image); } 
+   <DAYOFYEAR>
+   (e=integerHourMinuteSecond())? <EOF>
+   {
+      /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, dayOfYear);
+      
+      return d+e;
+   }
+} 
+
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      i-Y/........... Yy   
+ *      i-Y/i:i........ YyHM 
+ *      i-Y/i:i:i...... YyHMS
+ *      i-Y/i:i:n...... YyHMS
+ *      i-Y/i:n........ YyHM 
+ *      i-Yd........... Yy   
+ *      i-Ydi:i........ YyHM 
+ *      i-Ydi:i:i...... YyHMS
+ *      i-Ydi:i:n...... YyHMS
+ *      i-Ydi:n........ YyHM 
+ *      iYd............ yY
+ *      iYdi:i......... yYHM
+ *      iYdi:i:i....... yYHMS
+ *      iYdi:i:n....... yYHMS
+ *      iYdi:n......... yYHM
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+double dayOfYearStrictYearDelimiter() :
+{
+   int year;
+   int dayOfYear;   
+   double d;
+   double e=0;
+   Token t;
+}
+{
+   t=<UNSIGNED_INTEGER> { dayOfYear = Integer.parseInt(t.image); } 
+   ( (<DASH> year=strictYear() ( <SLASH> | <DAYOFYEAR> )) 
+    |( year=strictYear() <DAYOFYEAR> ) )
+   ( e=integerHourMinuteSecond() )? <EOF>
+   {
+      /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, dayOfYear);
+      
+      return d+e;
+   }
+}
+
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      Yii............ YmD    
+ *      Yiii........... YmDH   
+ *      Yiii:i......... YmDHM  
+ *      Yiii:i:i....... YmDHMS 
+ *      Yiii:i:n....... YmDHMS 
+ *      Yiii:n......... YmDHM  
+ *      Yiiii.......... YmDHM  
+ *      Yiiiii......... YmDHMS 
+ *      Yiiiin......... YmDHMS 
+ *      Yiiin.......... YmDHM  
+ *      Yiin........... YmDH
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+double spaceDelimitedStrictYearMonthDay() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( year=strictYear() 
+     t=<UNSIGNED_INTEGER> { month=Integer.parseInt(t.image); }
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     (  LOOKAHEAD(integerHourMinuteSecond())
+        e=integerHourMinuteSecond() 
+      | e=spacedHourMinuteSecond() )?
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      i-i-Y.......... mDY    
+ *      i-i-Yi:i....... mDYHM  
+ *      i-i-Yi:i:i..... mDYHMS 
+ *      i-i-Yi:i:n..... mDYHMS 
+ *      i-i-Yi:n....... mDYHM  
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double dashedMonthDayStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( t=<UNSIGNED_INTEGER> { month=Integer.parseInt(t.image); } <DASH>
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); } <DASH>
+     year=strictYear()
+     ( e=integerHourMinuteSecond() )?
+   ) <EOF>
+   {
+   	      /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      i/i/Y.......... mDY     
+ *      i/i/Yi:i....... mDYHM  
+ *      i/i/Yi:n....... mDYHM
+ *      i/i/Yi:i:i..... mDYHMS 
+ *      i/i/Yi:i:n..... mDYHMS 
+ *      i/i/Y/i:i...... mDYHM 
+ *      i/i/Y/i:n...... mDYHM 
+ *      i/i/Y/i:i:i.... mDYHM 
+ *      i/i/Y/i:i:n.... mDYHM 
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double slashedMonthDayStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( t=<UNSIGNED_INTEGER> { month=Integer.parseInt(t.image); } <SLASH>
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); } <SLASH>
+     year=strictYear()
+     ( (<SLASH>)? e=integerHourMinuteSecond() )?
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      i/i/i.......... mDY    
+ *      i/i/ii:i....... mDYHM  
+ *      i/i/ii:i:i..... mDYHMS
+ *      i/i/ii:i:n..... mDYHMS
+ *      i/i/ii:n....... mDYHM
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double slashedMonthDayInteger() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( t=<UNSIGNED_INTEGER> { month=Integer.parseInt(t.image); } <SLASH>
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); } <SLASH>
+     t=<UNSIGNED_INTEGER> { year=Integer.parseInt(t.image); }
+     ( e=integerHourMinuteSecond() )?
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      i:ii-i-Y....... mDYHM  
+ *      i:i:ii-i-Y..... mDYHMS 
+ *      i:i:ni-i-Y..... mDYHMS 
+ *      i:ni-i-Y....... mDYHM  
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double trailingDashedMonthDayStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   /*
+    *  Note, the integerHourMinuteSecond() expansion is not optional,
+    *  because if it's missing it matches the dashedMonthDayStrictYear()
+    *  non-terminal.
+    */
+   ( e=integerHourMinuteSecond()
+     t=<UNSIGNED_INTEGER> { month=Integer.parseInt(t.image); } <DASH>
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); } <DASH>
+     year=strictYear()
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      i:ii/i/Y....... mDYHM  
+ *      i:ni/i/Y....... mDYHM
+ *      i:i:ii/i/Y..... mDYHMS 
+ *      i:i:ni/i/Y..... mDYHMS 
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double trailingSlashedMonthDayStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   /*
+    *  Note the integerHourMinuteSecond() non-terminal is not optional
+    *  in this expansion.  The reason for this is that an absent time
+    *  specification is matched by the slashedMonthDayStrictYear()
+    *  non-terminal.
+    */
+   ( e=integerHourMinuteSecond()
+     t=<UNSIGNED_INTEGER> { month=Integer.parseInt(t.image); } <SLASH>
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); } <SLASH>
+     year=strictYear()
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      i:ii/i/i....... mDYHM  
+ *      i:i:ii/i/i..... mDYHMS
+ *      i:i:ni/i/i..... mDYHMS
+ *      i:ni/i/i....... mDYHM
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double trailingSlashedMonthDayInteger() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   /*
+    *  As with the other trailing year, day specifications, the
+    *  integerHourMinuteSecond() non-terminal is required, since the
+    *  non-trailing version of this non-terminal matches the optional
+    *  time specification.
+    */
+   ( e=integerHourMinuteSecond()
+     t=<UNSIGNED_INTEGER> { month=Integer.parseInt(t.image); } <SLASH>
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); } <SLASH>
+     t=<UNSIGNED_INTEGER> { year=Integer.parseInt(t.image); }
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      iiY............ mDY
+ *      iiYi........... mDYH
+ *      iiYi:i......... mDYHM
+ *      iiYi:i:i....... mDYHMS
+ *      iiYi:i:n....... mDYHMS
+ *      iiYi:n......... mDYHM
+ *      iiYn........... mDYH 
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double spaceDelimitedMonthDayStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( t=<UNSIGNED_INTEGER> { month=Integer.parseInt(t.image); }
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     year=strictYear() 
+     ( e=hourMinuteSecond() )?
+   ) <EOF>
+   {
+   	      /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *  <pre>
+ *      Yim............ YDm   
+ *      Yimi........... YDmH  
+ *      Yimi:i......... YDmHM 
+ *      Yimi:i:i....... YDmHMS
+ *      Yimi:i:n....... YDmHMS
+ *      Yimi:n......... YDmHM 
+ *      Yimn........... YDmH  
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double spaceDelimitedStrictYearDayNamedMonth() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( year=strictYear()
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     month=namedMonth()
+     ( e=hourMinuteSecond() )?
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *  <pre>
+ *      Ymi............ YmD    
+ *      Ymii........... YmDH   
+ *      Ymii:i......... YmDHM  
+ *      Ymii:i:i....... YmDHMS 
+ *      Ymii:i:n....... YmDHMS 
+ *      Ymii:n......... YmDHM  
+ *      Ymin........... YmDH   
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double spaceDelimitedStrictYearNamedMonthDay() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( year=strictYear()
+     month=namedMonth()
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     ( e=hourMinuteSecond() )?
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      iim............ YDm
+ *      iimi........... YDmH
+ *      iimi:i......... YDmHM
+ *      iimi:i:i....... YDmHMS
+ *      iimi:i:n....... YDmHMS
+ *      iimi:n......... YDmHM
+ *      iimii.......... YDmHM
+ *      iimiii......... YDmHMS
+ *      iimiin......... YDmHMS
+ *      iimin.......... YDmHM
+ *      iimn........... YDmH
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double spaceDelimitedIntegerDayNamedMonth() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( t=<UNSIGNED_INTEGER> { year=Integer.parseInt(t.image); }  
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     month=namedMonth()
+     (  LOOKAHEAD(integerHourMinuteSecond())
+        e=integerHourMinuteSecond() 
+      | e=spacedHourMinuteSecond() )?
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *     imY............ DmY
+ *     imYi........... DmYH
+ *     imYi:i......... DmYHM
+ *     imYi:i:i....... DmYHMS
+ *     imYi:i:n....... DmYHMS
+ *     imYi:n......... DmYHM
+ *     imYn........... DmYH
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double spaceDelimitedDayNamedMonthStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     month=namedMonth()
+     year=strictYear()
+     (  e=hourMinuteSecond() )?
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *      iim............ YDm
+ *      imi............ YmD
+ *      imii........... YmDH
+ *      imii:i......... YmDHM
+ *      imii:i:i....... YmDHMS
+ *      imii:i:n....... YmDHMS
+ *      imii:n......... YmDHM
+ *      imiii.......... YmDHM
+ *      imiiii......... YmDHMS
+ *      imiiin......... YmDHMS
+ *      imiin.......... YmDHM
+ *      imin........... YmDH
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double spaceDelimitedIntegerNamedMonthDay() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( t=<UNSIGNED_INTEGER> { year=Integer.parseInt(t.image); }  
+     month=namedMonth()
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     (  LOOKAHEAD(integerHourMinuteSecond())
+        e=integerHourMinuteSecond() 
+      | e=spacedHourMinuteSecond() )?
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *     miY............ mDY
+ *     miYi........... mDYH
+ *     miYi:i......... mDYHM
+ *     miYi:i:i....... mDYHMS
+ *     miYi:i:n....... mDYHMS
+ *     miYi:n......... mDYHM
+ *     miYn........... mDYH
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double spaceDelimitedNamedMonthDayStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( month=namedMonth()
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     year=strictYear()
+     (  e=hourMinuteSecond() )?
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *  <pre>
+ *     mii............ mDY
+ *     miii........... mDYH
+ *     miii:i......... mDYHM
+ *     miii:i:i....... mDYHMS
+ *     miii:i:n....... mDYHMS
+ *     miii:n......... mDYHM
+ *     miiii.......... mDYHM
+ *     miiiii......... mDYHMS
+ *     miiiin......... mDYHMS
+ *     miiin.......... mDYHM
+ *     miin........... mDYH
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double spaceDelimitedNamedMonthDayInteger() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( month=namedMonth()
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     t=<UNSIGNED_INTEGER> { year=Integer.parseInt(t.image); }  
+     (  LOOKAHEAD(integerHourMinuteSecond())
+        e=integerHourMinuteSecond() 
+      | e=spacedHourMinuteSecond() )?
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *     imi:i:iY....... DmHMSY
+ *     imi:i:nY....... DmHMSY
+ *     imi:iY......... DmHMY
+ *     imi:nY......... DmHMY
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double dayNamedMonthSplitStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     month=namedMonth()
+     e=integerHourMinuteSecond()      
+     year=strictYear()
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *  <pre>
+ *     mii:i:iY....... mDHMSY
+ *     mii:i:nY....... mDHMSY
+ *     mii:iY......... mDHMY
+ *     mii:nY......... mDHMY
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double namedMonthDaySplitStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( month=namedMonth()
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     e=integerHourMinuteSecond()      
+     year=strictYear()
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *     i:i:iimY....... HMSDmY
+ *     i:i:nimY....... HMSDmY
+ *     i:iimY......... HMDmY
+ *     i:nimY......... HMDmY
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double trailingDayNamedMonthStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( e=integerHourMinuteSecond()
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     month=namedMonth()
+     year=strictYear()
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *     i:i:imiY....... HMSmDY
+ *     i:i:nmiY....... HMSmDY
+ *     i:imiY......... HMmDY
+ *     i:nmiY......... HMmDY
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double trailingNamedMonthDayStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e=0.0;
+   Token t;
+}
+{
+   ( e=integerHourMinuteSecond()
+     month=namedMonth()
+     t=<UNSIGNED_INTEGER> { day=Integer.parseInt(t.image); }
+     year=strictYear()
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.
+       */
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+
+}
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *     Ymn............ YmD
+ *     imn............ YmD
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double yearNamedMonthDecimalDay() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e;
+   Token t;
+}
+{
+   ( year=looseYear()
+     month=namedMonth()
+     t=<NUMBER> { e=Double.parseDouble(t.image); }
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.  In order to do this we need to strip
+       *  the integral part of the decimal day, e.  We can simply use the
+       *  floor function, since e is guarenteed by the token manager to
+       *  be a non-negative decimal number.
+       */
+      day = (int)Math.floor(e);
+      e = (e - Math.floor(e))*SECONDS_PER_DAY;
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}	
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *     Ynm............ YDm
+ *     inm............ YDm
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double yearDecimalDayNamedMonth() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e;
+   Token t;
+}
+{
+   ( year=looseYear()
+     t=<NUMBER> { e=Double.parseDouble(t.image); }
+     month=namedMonth()
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.  In order to do this we need to strip
+       *  the integral part of the decimal day, e.  We can simply use the
+       *  floor function, since e is guarenteed by the token manager to
+       *  be a non-negative decimal number.
+       */
+      day = (int)Math.floor(e);
+      e = (e - Math.floor(e))*SECONDS_PER_DAY;
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}	
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *     mnY............ mDY
+ *     mni............ mDY
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double namedMonthDecimalDayYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e;
+   Token t;
+}
+{
+   ( month=namedMonth()
+     t=<NUMBER> { e=Double.parseDouble(t.image); }
+     year=looseYear()
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.  In order to do this we need to strip
+       *  the integral part of the decimal day, e.  We can simply use the
+       *  floor function, since e is guarenteed by the token manager to
+       *  be a non-negative decimal number.
+       */
+      day = (int)Math.floor(e);
+      e = (e - Math.floor(e))*SECONDS_PER_DAY;
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}	
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *     nmY............ DmY
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double decimalDayNamedMonthStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e;
+   Token t;
+}
+{
+   ( t=<NUMBER> { e=Double.parseDouble(t.image); }
+     month=namedMonth()
+     year=strictYear()
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.  In order to do this we need to strip
+       *  the integral part of the decimal day, e.  We can simply use the
+       *  floor function, since e is guarenteed by the token manager to
+       *  be a non-negative decimal number.
+       */
+      day = (int)Math.floor(e);
+      e = (e - Math.floor(e))*SECONDS_PER_DAY;
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}	
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *     inY............ mDY
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double monthDecimalDayStrictYear() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e;
+   Token t;
+}
+{
+   ( t=<UNSIGNED_INTEGER> { month=Integer.parseInt(t.image); }
+     t=<NUMBER> { e=Double.parseDouble(t.image); }
+     year=strictYear()
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.  In order to do this we need to strip
+       *  the integral part of the decimal day, e.  We can simply use the
+       *  floor function, since e is guarenteed by the token manager to
+       *  be a non-negative decimal number.
+       */
+      day = (int)Math.floor(e);
+      e = (e - Math.floor(e))*SECONDS_PER_DAY;
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}	
+
+/*
+ *  This non-terminal parses strings that start with the form:
+ *     Yin............ YmD
+ *
+ *   @return  seconds past the J2000 reference epoch on a formal 
+ *            86400 seconds per day calendar.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double strictYearMonthDecimalDay() :
+{
+   int year;
+   int month;
+   int day;
+   double d;
+   double e;
+   Token t;
+}
+{
+   ( year=strictYear()
+     t=<UNSIGNED_INTEGER> { month=Integer.parseInt(t.image); }
+     t=<NUMBER> { e=Double.parseDouble(t.image); } 
+   ) <EOF>
+   {
+   	  /*
+       *  First correct the year for any era specification noted by the
+       *  token manager.  Then adjust any two digit years into the proper
+       *  century.
+       */
+      year = correctYearForEra(year);
+      year = processTwoDigitYears(year);
+      
+      /*
+       *  Now apply Muller-Wimberly to convert the year and day of year
+       *  into seconds past J2000.  In order to do this we need to strip
+       *  the integral part of the decimal day, e.  We can simply use the
+       *  floor function, since e is guarenteed by the token manager to
+       *  be a non-negative decimal number.
+       */
+      day = (int)Math.floor(e);
+      e = (e - Math.floor(e))*SECONDS_PER_DAY;
+      d = mullerWimberly(year, month, day);
+      
+      return d+e;
+   }
+}	
+
+/*
+ *  Parse a token that "might" be a year, but should be interpretted
+ *  as one.
+ *
+ *  Tokens that "might" be years come in two flavors:
+ *  <pre>
+ *     <UNSIGNED_INTEGER> - this sequence of digits should be interpretted
+ *                          as a year.
+ *     strictYear() - anything acceptable to the non-terminal strictYear()
+ *                    can obviously be interpretted loosely as a year!
+ *  </pre>
+ *
+ *  @return  a integer containing the raw, unprocessed year.  This will 
+ *           not be corrected for any era specification or two digit year
+ *           processing.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+int looseYear() :
+{
+   Token t;
+   int y;
+}
+{
+     y=strictYear() { return y; } 
+   | t=<UNSIGNED_INTEGER> { return Integer.parseInt(t.image); } 
+}
+
+/*
+ *  Parse a token that must be a year.
+ *
+ *  Tokens that must be years come in three flavors:
+ *  <pre>
+ *     <YEAR> - any four digit or greater unsigned integer
+ *     <YEARAD> - any sequence of digits followed by the era token <AD>
+ *     <YEARBC> - any sequence of digits followed by the era token <BC>
+ *     <QUOTED_YEAR> - any sequence of less than 3 digits preceded by "'"
+ *  </pre>
+ *
+ *  @return  a integer containing the year, as specified by the token.
+ *           Note: this year is NOT processed for two digit years, nor
+ *           is it corrected for the specified era.  This is deferred
+ *           until other routines.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+int strictYear() :
+{
+   Token t;
+}
+{
+   ( t=<YEAR> | t=<YEARAD> | t=<YEARBC> | t=<QUOTED_YEAR> ) 
+   {
+      return Integer.parseInt(t.image);	
+   }
+}
+
+/*
+ *  Parse a named month into its integer equivalent.
+ *  
+ *  @return  the integer number, starting with 1, corresponding to
+ *           the named month.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+int namedMonth() :
+{}
+{
+     <JAN> (<PERIOD>)? { return 1; }
+   | <FEB> (<PERIOD>)? { return 2; }
+   | <MAR> (<PERIOD>)? { return 3; }
+   | <APR> (<PERIOD>)? { return 4; }
+   | <MAY> (<PERIOD>)? { return 5; }
+   | <JUN> (<PERIOD>)? { return 6; }
+   | <JUL> (<PERIOD>)? { return 7; }
+   | <AUG> (<PERIOD>)? { return 8; }
+   | <SEP> (<PERIOD>)? { return 9; }
+   | <OCT> (<PERIOD>)? { return 10; }
+   | <NOV> (<PERIOD>)? { return 11; }
+   | <DEC> (<PERIOD>)? { return 12; }
+}
+
+/*
+ *  Parse the hour, minute, second specification where the hour followed
+ *  by a colon is required.
+ *
+ *  This non-terminal parses a standard, colon delimited, hours, minutes,
+ *  and second time specification.  This particular non-terminal requires
+ *  that the hour followed by a colon followed by a minute specification 
+ *  be present, and that the hour is an integer.
+ *
+ *  @return  the number of seconds ellapsed from 00:00:00.000 as specified
+ *           by the tokens in the stream connected to the parser.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double integerHourMinuteSecond() :
+{
+	double d=0.0;
+	String h = null;
+	String m = null;
+	String s = null;
+	Token t,u;
+}
+{
+	t=<UNSIGNED_INTEGER> { h = t.image; } <COLON>
+	( t=<NUMBER> { m = t.image; } |
+	   ( t=<UNSIGNED_INTEGER> { m = t.image; }
+	      ( <COLON> (  t=<NUMBER> { s = t.image; } 
+	                 | t=<UNSIGNED_INTEGER> { s = t.image; } ) 
+	      )? 
+	   )
+	)
+    { 
+      if ( h != null ) {
+         d += 3600.0 * Double.parseDouble(h);
+      }
+      if ( m != null ) { 
+         d += 60.0 * Double.parseDouble(m);
+      }
+      if ( s != null ) { 
+         d += Double.parseDouble(s);
+      }
+      
+      return d;
+    }
+}
+
+/*
+ *  Parse a non-colon delimited hour, minute, second specification.
+ *
+ *  This non-terminal parses the a standard hour, minutes, and second time
+ *  specification.  It allows for the final field of the stream to contain
+ *  a floating point number, rather than an integral amount.
+ *
+ *  @return  the number of seconds ellapsed from 00:00:00.000 as specified
+ *           by the tokens in the stream connected to the parser.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double spacedHourMinuteSecond() :
+{
+   double d=0.0;
+   String h=null;
+   String m=null;
+   String s=null;
+   Token t;
+}
+{
+   ( t=<NUMBER> { h = t.image; } | t=<UNSIGNED_INTEGER> { h = t.image; } 
+      (  t=<NUMBER> { m = t.image; } 
+       | t=<UNSIGNED_INTEGER> { m = t.image; } 
+             ( ( t=<NUMBER> { s = t.image; } | 
+                 t=<UNSIGNED_INTEGER> { s = t.image; } )
+             )?
+      )?
+   )
+   { 
+      if ( h != null ) {
+         d += 3600.0 * Double.parseDouble(h);
+      }
+      if ( m != null ) { 
+         d += 60.0 * Double.parseDouble(m);
+      }
+      if ( s != null ) { 
+         d += Double.parseDouble(s);
+      }
+      
+      return d;
+    }
+}
+
+/*
+ *  Parse the hour, minute, second specification.
+ *
+ *  This non-terminal parses the a standard, colon delimited, hours, minutes, 
+ *  and second time specification.  It allows for the final field of the 
+ *  stream to contain a floating point number, rather than an integral amount.
+ *
+ *  @return  the number of seconds ellapsed from 00:00:00.000 as specified
+ *           by the tokens in the stream connected to the parser.
+ */
+/**
+ *  Supporting non-terminal, <b>do not call directly</b>.
+ */
+double hourMinuteSecond() :
+{
+   double d=0.0;
+   String h = null;
+   String m = null;
+   String s = null;
+   Token t;
+}
+{
+   ( t=<NUMBER> { h = t.image; } | t=<UNSIGNED_INTEGER> { h = t.image; } 
+      ( <COLON> 
+         (  t=<NUMBER> { m = t.image; } 
+          | t=<UNSIGNED_INTEGER> { m = t.image; } 
+             ( <COLON> ( t=<NUMBER> { s = t.image; } | 
+                         t=<UNSIGNED_INTEGER> { s = t.image; } )
+             )?
+         )
+      )?
+   )
+   { 
+      if ( h != null ) {
+         d += 3600.0 * Double.parseDouble(h);
+      }
+      if ( m != null ) { 
+         d += 60.0 * Double.parseDouble(m);
+      }
+      if ( s != null ) { 
+         d += Double.parseDouble(s);
+      }
+      
+      return d;
+    }
+}

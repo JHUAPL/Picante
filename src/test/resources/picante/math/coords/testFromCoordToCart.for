@@ -1,0 +1,148 @@
+      PROGRAM TESTFROMCOORDTOCART
+      IMPLICIT NONE
+
+      CHARACTER          TYPE
+
+      CHARACTER*(256)    CMDARG
+
+      DOUBLE PRECISION      X
+      DOUBLE PRECISION      Y
+      DOUBLE PRECISION      Z
+      DOUBLE PRECISION      VX
+      DOUBLE PRECISION      VY
+      DOUBLE PRECISION      VZ
+
+      CALL GETARG ( 1, CMDARG )
+      READ (CMDARG, *) TYPE 
+      CALL GETARG ( 2, CMDARG )
+      READ (CMDARG, *) X
+      CALL GETARG ( 3, CMDARG )
+      READ (CMDARG, *) Y
+      CALL GETARG ( 4, CMDARG )
+      READ (CMDARG, *) Z
+      CALL GETARG ( 5, CMDARG )
+      READ (CMDARG, *) VX
+      CALL GETARG ( 6, CMDARG )
+      READ (CMDARG, *) VY
+      CALL GETARG ( 7, CMDARG )
+      READ (CMDARG, *) VZ
+
+c      CALL ERRPRT ( 'SET' , 'NONE' )
+c      CALL ERRACT ( 'SET', 'RETURN' )
+      
+      IF (TYPE .EQ. 'L') THEN
+         CALL LATTOREC(X,Y,Z, VX,VY,VZ)
+      ENDIF
+      IF (TYPE .EQ. 'S') THEN
+         CALL SPHTOREC(X,Y,Z, VX,VY,VZ)
+      ENDIF
+      IF (TYPE .EQ. 'C') THEN
+         CALL CYLTOREC(X,Y,Z, VX,VY,VZ)
+      ENDIF
+
+      END
+
+
+C     COMMENTS
+      SUBROUTINE LATTOREC (R, LONG, LAT, VR, VLONG, VLAT)
+
+      IMPLICIT NONE
+
+      DOUBLE PRECISION      R
+      DOUBLE PRECISION      LONG
+      DOUBLE PRECISION      LAT
+
+      DOUBLE PRECISION      VR
+      DOUBLE PRECISION      VLONG
+      DOUBLE PRECISION      VLAT
+      DOUBLE PRECISION      LATV(3)
+
+      DOUBLE PRECISION      POS(3)
+      DOUBLE PRECISION      VEL(3)
+
+      DOUBLE PRECISION      JACOBI ( 3, 3 )
+
+      LATV(1) = VR
+      LATV(2) = VLONG
+      LATV(3) = VLAT
+
+      CALL LATREC (R, LONG, LAT, POS )
+      CALL DRDLAT (R, LONG, LAT, JACOBI )
+
+      CALL MXV ( JACOBI, LATV, VEL )
+
+      WRITE(*,*)  POS(1), POS(2), POS(3), 
+     .     VEL(1),VEL(2),VEL(3)
+
+      END
+
+
+C     COMMENTS
+      SUBROUTINE SPHTOREC (R, L, Z, VR, VL, VZ)
+
+      IMPLICIT NONE
+
+      DOUBLE PRECISION      R
+      DOUBLE PRECISION      L
+      DOUBLE PRECISION      Z
+
+      DOUBLE PRECISION      VR
+      DOUBLE PRECISION      VL
+      DOUBLE PRECISION      VZ
+      DOUBLE PRECISION      CYLV(3)
+
+      DOUBLE PRECISION      POS(3)
+      DOUBLE PRECISION      VEL(3)
+
+      DOUBLE PRECISION      JACOBI ( 3, 3 )
+
+      CYLV(1) = VR
+      CYLV(2) = VL
+      CYLV(3) = VZ
+
+      CALL SPHREC (R, L, Z, POS )
+      CALL DRDSPH (R, L, Z, JACOBI )
+
+      CALL MXV ( JACOBI, CYLV, VEL )
+
+      WRITE(*,*)  POS(1), POS(2), POS(3), 
+     .     VEL(1),VEL(2),VEL(3)
+         
+
+      END
+
+
+C     COMMENTS
+      SUBROUTINE CYLTOREC (R, L, Z, VR, VL, VZ)
+
+      IMPLICIT NONE
+
+      DOUBLE PRECISION      R
+      DOUBLE PRECISION      L
+      DOUBLE PRECISION      Z
+
+      DOUBLE PRECISION      VR
+      DOUBLE PRECISION      VL
+      DOUBLE PRECISION      VZ
+      DOUBLE PRECISION      CYLV(3)
+
+      DOUBLE PRECISION      POS(3)
+      DOUBLE PRECISION      VEL(3)
+
+      DOUBLE PRECISION      JACOBI ( 3, 3 )
+
+      CYLV(1) = VR
+      CYLV(2) = VL
+      CYLV(3) = VZ
+
+      CALL CYLREC (R, L, Z, POS )
+      CALL DRDCYL (R, L, Z, JACOBI )
+
+      CALL MXV ( JACOBI, CYLV, VEL )
+
+      WRITE(*,*) JACOBI
+
+      WRITE(*,*)  POS(1), POS(2), POS(3), 
+     .     VEL(1),VEL(2),VEL(3)
+
+      END

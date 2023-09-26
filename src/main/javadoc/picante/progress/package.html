@@ -1,0 +1,442 @@
+<html>
+
+<head>
+</head>
+<body>
+<h2>Monitoring Progress</h2>
+Here are the rules for using progress monitors in your code.
+
+The progress monitor framework is a mechanism which attempts to address
+the following concerns:
+<ol>
+<li>providing an easy way to perform long-running operations to run in a non-GUI thread</li>
+<li>allowing long-running operations to be cancelled by the user</li>
+<li>providing a progress indicator for long tasks</li>
+</ol>
+
+<p>
+There are three interfaces in this framework, plus some classes that implement them.
+</p>
+<ol>
+<li>
+the <code>IProgressMonitor</code> interface<br/>
+It defines how long running tasks interact with the object that
+is displaying some kind of progress.
+</li>
+<li>
+the <code>IRunnableWithProgress</code> interface<br/>
+This is to be implemented by all long running jobs and it offers a way to hand off
+a long running job to something that can do this job on another thread.
+</li>
+<li>
+the <code>IRunnableContext</code> interface<br/>
+This captures the "thing that runs the job on another thread" from the previous
+interface. Objects implementing this interface take an <code>IRunnableWithProgress</code>
+and execute it on another thread, passing in a progress monitor to the <code>run()</code>
+method of the runnable object.
+</li>
+</ol>
+
+<p>
+Progress monitor functionality is captured as an interface which is modeled closely after
+that found in the Eclipse source code.
+An IProgressMonitor object is passed into a long running job, and it
+is that job's responsibility to both notify the monitor of changes
+in the state of the job (task started, work performed, task done)
+and to check the progress monitor for cancellation requests.
+When a cancellation request is detected, the job should
+clean up after itself and throw an InterreuptedException.
+(I have provided a convenience class CancelledException which
+inherits from InterruptedException).
+</p>
+
+<p>
+The framework incorporates a mechansim for long running tasks
+to spawn sub-tasks, and in this case, you create a sub-task
+progress monitor that connects back to the parent monitor
+and is assigned a certain amount of the parent monitor's work.
+</p>
+
+<h3>Here are the rules for using a progress monitor within a long running task. </h3>
+<ul>
+<li>
+<h3>Trap all exceptions.</h3>
+The <code>run(IProgressMonitor pmon)</code> method cannot throw anything.
+This is because the caller of this method is far removed from the actual
+task and cannot be excpeted to know how to handle these exceptions.
+</li>
+<li>
+<h3>One method, one progress monitor.</h3>
+The main rule is that if your method initiates a progress monitor with a
+call to <code>taskStarted()</code>, then that method should most certainly
+be the place where the <code>taskDone()</code> method is called.
+The progress monitor passed into a method is completely devoted
+to the task in that method. So that method decides how much work
+to start the task with, and how much work to report along the way
+(these should ultimately agree). You can actually report slightly
+less work than you started the task with, but if you report more,
+the progress monitor will think the task is done and may decide
+to close down (hiding the Cancel button in the process!)
+
+<br/>
+This approach anticipates the use of sub-task monitors. Your method does
+not know if its task is the entire task, or just a sub-task. But it
+doesn't have to. Sub tasks are each sent their own freshly minted progress
+monitor which is wholly theirs to start and complete.
+<br/>
+Here is an example of an outline for a long running method:
+<pre>
+  public void run(IProgressMonitor pmon)
+  {
+     try {
+        int work = 1000; // use big numbers here (not 10s, but at least hundreds)
+
+        pmon.taskStarted(activityLabel, work);
+
+        ... do work, report progress, check for cancel...
+        pmon.reportWorkDone(100); // do this 10 times
+
+        if (pmon.hasCancelBeenRequested()) {
+           ... close up job...
+           // throw interrupted exception
+           throw new InterruptedException("Job X Cancelled!");
+        }
+
+       ... not shown here: catching and dealing with all exceptions ...
+       
+     } finally {
+     
+        // no matter what, you are responsible for completing this task
+        // (otherwise, the progress window will be stuck on the screen!)
+
+        pmon.taskDone();
+     }
+  }
+</pre>
+One instance where you don't have to make sure to call the
+<code>taskDone()</code> method is if you are just passing
+a progress monitor through. For example, if you have a method
+which does not do any work, but just calls another
+method that does the work, then you can just pass through the progress
+monitor. If you start calling its methods though, it becomes yours!
+<pre>
+   private void run(IProgressMonitor pmon)
+   {
+      // some internal method in your class that does the actual
+      // work based on some parameters in the class
+
+      try {
+        //Notice that the doRealWork method can throw Exceptions
+        // Lots of long running operations will throw exceptions.
+        // But the method implementing the method on the 
+        // IRunnableWithProgress interface must catch them all.
+        
+        doRealWork( url, settings, pmon);
+
+      } catch (InterruptedException ex) {
+         ... put up a popup window ...
+      }
+   }
+</pre>
+</li>
+<li> <h3>Wrapping the <code>run</code> method</h3>
+Many of your long-running tasks will take progress monitors but will also
+take other parameters and will throw all kinds of exceptions. This is fine.
+These method calls just need to be wrapped by an anonymous inner class
+meeting the <code>IRunnableWithProgress</code> interface.
+</li>
+</ul>
+
+
+<h3>Progress Monitor Implementations</h3>
+<p>
+There are 2 implementations of the IProgressMonitor interface. One is GUI based.
+Oddly enough, the GUI popup progress monitor does not implement the
+<code>IProgressMonitor</code> interface. It implements the <code>IRunnableContext</code>
+instead, and then you just give it the runnable and it takes care of everything.
+</p>
+
+<p>
+The other implementation is an ASCII version, and it does implement
+the <code>IProgressMonitor</code> interface, in case you want
+to just throw a quick and dirty progress monitor at a long
+running operation that is running in a batch thread or some other
+non-GUI thread.
+</p>
+
+<p>
+Here is an example of an action listener on a button that
+starts a long-running job which talks to a progress monitor.
+</p>
+<pre>
+      JButton loadTextURLButton = new JButton("Load Text URL");
+      loadTextURLButton.addActionListener(new ActionListener() {
+         public void actionPerformed(@SuppressWarnings("unused")
+         ActionEvent evt)
+         {
+            IRunnableWithProgress runnable = new IRunnableWithProgress() {
+               @Override
+               public boolean isCancellable()
+               {
+                  return true;
+               }
+               @Override
+               public void run(IProgressMonitor pmon)
+               {
+                  // method on enclosing class - this one should be very short
+                  // and if it throws exceptions, you would have to deal with
+                  // them here!
+                  URL url = getUrlFromAnotherMethodInThisClass();
+                  doLongOperation(url, pmon);
+               }
+            };
+
+            boolean isModal = false;
+            String title = "Executing my long running operation";
+            long millisecToPopUp = 300L;
+            ProgressMonitorPopUpDialog popup = new ProgressMonitorPopUpDialog(
+                     jframe, title, isModal, millisecToPopUp);
+
+            popup.run(runnable);
+         }
+
+      });
+</pre>
+
+Here is an example of a method that does the long operation:
+<pre>
+   public void doLongOperation(URL url, IProgressMonitor pmon)
+   {
+      // maybe we know how much data is in the URL:
+      int numBytes = getLength(u);
+
+      // use those bytes as the number of units of work to do
+      int totalWorkUnits = numBytes;
+      int label = "Reading from file";
+      try {
+         // you have to start the task
+         pmon.taskStarted(label, totalWorkUnits);
+
+         // If you don't know the totalWorkUnits, just use any (positive) number there,
+         // and then call this method to tell the progress monitor you don't really know
+         // how much work there is:
+         // pmon.setIndeterminate(true);
+         // Be careful not to add too much work to the task.
+         
+
+         // you can set the activity label of the task
+         pmon.setCurrentActivityLabel("Reading data from " + url.toString());
+
+         // Here is the main work - note that thiscan throw IOexception
+         // (and your operation will throw any number of exceptions)
+         Data data = new Data();
+         for (int i=0; i&lt;numBytes; i++) {
+            data.addSomeMoreData( readOneByteFromUrl(url));
+            pmon.reportWorkDone(1);
+            if (pmon.hasCancelBeenRequested()) {
+               // clean up and exit
+               throw new InterruptedException();
+            }
+         }
+         
+         // Now you'll want to have your application do something
+         // with the data you just downloaded. So in this example,
+         // lets suppose that a Swing component needs to be updated,
+         // so recall that all Swing component changes need to be
+         // the Swing event loop thread.
+         SwingUtilities.invokeLater(new Runnable() {
+            public void run()
+            {
+               // Suppose textArea is a JTextArea GUI component
+               textArea.setText( data.getTextLines() );
+            }
+         });
+
+      // an IRunnagleWithProgress.run(pmon) method can't throw any
+      // exceptions, so we have to catch them here.
+
+      } catch (InterruptedException ie) {
+         ie.printStackTrace();
+         JOptionPane.showMessageDialog(jframe, ie.getMessage(),
+                  "Cancel Notice", JOptionPane.INFORMATION_MESSAGE);
+      } catch (IOException ioe) {
+         ioe.printStackTrace();
+         JOptionPane.showMessageDialog(jframe, ioe.getMessage(),
+                  "Error Notice", JOptionPane.ERROR_MESSAGE);
+      } finally {
+         // if you call pmon.taskStarted(), then you MUST call this too:
+         pmon.taskDone();
+         
+         // recall that finally clauses are executed even if there are exceptions
+      }
+   }
+
+
+</pre>
+
+In reality, I almost never write that much code for my long running operations.
+The exception catching code (whcih pops up dialog boxes with the error message)
+will be pretty much the same for all long running operations within an application.
+So I create another application specific interface
+that looks very much like an IRunnableWithProgress, but it allows for exceptions.
+but then has another method, perhaps something like 
+<pre>
+  public interface MyFlavorOfRunnableWithProgress
+  {
+     doActualWork(IProgressMonitor pmon) throws InterruptedException, IOException, MyOtherException;
+  }
+</pre>
+Then I create an implementation of an IRunnableWithProgress that takes
+MyFlavorOfRunnableWithProgress in the constructor, and in its (no-exception
+version) of the run method, it catches all the possible exceptions and
+pops up dialog boxes. You can also decide here what to do about interrupted exceptions.
+If  you want, you can pop up a dialog to let the user know that the operation was cancelled,
+or you can just do nothing.
+
+<br/>
+&nbsp;
+<br/>
+
+It may be the case that the long running operation in your class will just turn around and
+call another method to do its work. If you just have one other long running subtask to
+invoke, you don't have to start, report to and close out the progress monitor.
+You can let the single subtask do this for you.
+
+<br/>
+&nbsp;
+<br/>
+
+But if you have two or more long running subtasks, you have to go ahead and start the
+progress monitor in your method, and then hand off sub-task progress monitors
+for each subtask. There is an example of this near the bottom of the page.
+Basically, each sub-task monitor is then given so many units of work on the
+main task, but the top method takes responsibility for starting and finishing the
+progress monitor.
+
+<br/>
+&nbsp;
+<br/>
+
+Here is an example of the doLongOperation() method where it just passes off
+the progress monitoring responsibility to one sub task. Note that it lets the subtask
+do all the starting, reporting and finishing of the progress monitor. It does trap exceptions.
+
+<pre>
+   public void doLongOperation(URL url, IProgressMonitor pmon)
+   {
+      try {
+         pmon.setCurrentActivityLabel("Reading Text Data from " + url.toString());
+
+         // Here is the main work which is done by another method
+         // and the management of the progress monitor is also managed by the
+         // other method.
+         final StringVector lines = getTextInfoFromUrl(url, pmon);
+
+         // We are updating a Swing component - so do this right!
+         SwingUtilities.invokeLater(new Runnable() {
+            public void run()
+            {
+               numLinesInTextUrlLabel.setText("" + lines.size() + " lines");
+            }
+         });
+      } catch (InterruptedException ie) {
+         ie.printStackTrace();
+         JOptionPane.showMessageDialog(jframe, ie.getMessage(),
+                  "Cancel Notice", JOptionPane.INFORMATION_MESSAGE);
+      } catch (IOException ioe) {
+         ioe.printStackTrace();
+         JOptionPane.showMessageDialog(jframe, ioe.getMessage(),
+                  "Error Notice", JOptionPane.ERROR_MESSAGE);
+      }
+      
+      // Note: a common mistake might be to put
+      // pmon.taskDone();
+      // here, but we just passed through thr pmon to another method
+      // and that method is already calling taskDone(), so it would
+      // be an error to call it here.
+   }
+
+
+
+   private StringVector getTextInfoFromUrl(URL url, IProgressMonitor pmon)
+            throws IOException, InterruptedException
+   {
+      IURLLineReader reader = new PlainTextURLLineReader(
+               AutoSensingURLConnector.createConnectorWithNoFTPCapability());
+      return reader.getTextLines(url, pmon);
+   }
+</pre>
+
+
+<h3>Sub-Tasks</h3>
+<p>
+A long task may consist of multiple subtasks. In this case, the overarching method
+must claim responsibility for monitoring the progress and
+divide up the work among sub-tasks. Its really not that hard.
+Here is an example:
+</p>
+<pre>
+   private ITimeSeriesTable readData(URL u, IProgressMonitor pmon)
+     throws IOException, InterruptedException
+   {
+      // its better to use variables to capture the relataive work for each sub-task
+      int workA = 500;
+      int workB = 1000
+      int totalWork = workA + workB;
+      
+      // This is just used to keep the same activity label as the parent
+      String taskLabel = SubTaskProgressMonitor.getLabel(pmon,
+                             "Reading url: " + url.toString());
+
+      try {
+         pmon.taskStarted(taskLabel, totalWork);
+
+         SubTaskProgressMonitor subMonitorA = new SubTaskProgressMonitor(pmon, label, workA);
+         URL [] urls = filefinder.findFiles(t1, t2, subMonitorA);
+
+         SubTaskProgressMonitor subMonitorB = new SubTaskProgressMonitor(pmon, label, workB);
+         return reader.readUrls(urls, subMonitorB);
+         
+         // Notice that you do not call taskDone() on the sub monitors.
+         // That is the job of the method that recieves the (as far as it knows)
+         // completely pristine progress monitor.
+         
+      } finally {
+         // This tells the task (or sub-task) to go ahead and set its
+         // work done to the full amount.
+         pmon.taskDone();
+      }
+                             
+   }
+</pre>
+<p>
+You can see here why it is important for each long running operation to complete its task
+by calling the <code>taskDone()</code> method.
+If a sub-task leaves some work undone, the parent task gets messed up because it was totally
+relying on the sub-task to do that work (i.e., report it as being done through the sub task
+progress monitor methods), and now the progress bar is off.
+Actually, this is not that big of a deal - it won't crash your code.
+If your sub-task does too much work, that can prematurely close the progress window.
+</p>
+
+<p>
+You can also have parts of your long operation do the work "in-house" and parts farmed out
+to sub-tasks. Search around in the timeseries library for examples of this.
+</p>
+
+<p>
+One final thing - if your sub task (any any task can be used in another task as a sub task!),
+then there are cases where you don't know what the total amount of work is.
+In this case, you should call the <code>pmon.setIndeterminate(true)</code> method
+on the progress monitor. Then you don't need to report work being done, but you should
+still check for cancellations. If you do report work done, then be very sure to
+not report too much. Its tempting to just assign some amount that will be close for some cases
+and just go with that, but this could make the progress bar complete too fast if your actual
+amount of work for the sub task exceeds what you assinged to it.
+
+Then, when your task is done, be sure to call <code>pmon.setInderminate(false)</code>
+so that the parent monitor is not left stuck in indeterminate mode.
+</p>
+
+</body>
+</html>

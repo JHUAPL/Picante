@@ -1,0 +1,8 @@
+
+\begindata
+   VALUE_WITH_PI = +PI
+\begintext
+
+\begindata
+   LIST_WITH_PI = +1.0D0 pi Pi PI pI +PI +Pi +pi +pI -PI -pI -pi -Pi 12.0
+\begintext

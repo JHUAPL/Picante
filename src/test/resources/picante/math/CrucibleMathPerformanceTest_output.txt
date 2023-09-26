@@ -1,0 +1,121 @@
+JDK      IEEEremainder: 501.2 ms, sum: NaN
+Crucible IEEEremainder: 525.3 ms, sum: NaN
+JAFAMA   IEEEremainder: 490.4 ms, sum: NaN
+
+JDK      min: 23.22 ms, sum: -1174800.000002084
+Crucible min: 20.81 ms, sum: -1174800.000002084
+JAFAMA   min: 24.18 ms, sum: -1174800.000002084
+
+JDK      cos: 261.8 ms, sum: 182995.61062958057
+Crucible cos: 60.36 ms, sum: 182995.61062958054
+JAFAMA   cos: 53.14 ms, sum: 182995.61062958054
+
+JDK      exp: 201.6 ms, sum: 4.875950644221435E13
+Crucible exp: 106.7 ms, sum: 4.875950644221435E13
+JAFAMA   exp: 100.1 ms, sum: 4.875950644221435E13
+
+JDK      log: 123.4 ms, sum: NaN
+Crucible log: 122.3 ms, sum: NaN
+JAFAMA   log: 113.8 ms, sum: NaN
+
+JDK      pow: 416.4 ms, sum: NaN
+Crucible pow: 131.4 ms, sum: NaN
+JAFAMA   pow: 124.5 ms, sum: NaN
+
+JDK      sin: 249.5 ms, sum: 5.683431503200609E-11
+Crucible sin: 96.54 ms, sum: 5.6820104177290887E-11
+JAFAMA   sin: 82.38 ms, sum: 5.6820104177290887E-11
+
+JDK      tan: 350.0 ms, sum: -1.2390088954816747E-13
+Crucible tan: 106.9 ms, sum: 1.5987211554602254E-14
+JAFAMA   tan: 92.38 ms, sum: 1.5987211554602254E-14
+
+JDK      ulp: 28.19 ms, sum: 6.6388040897980005E-9
+Crucible ulp: 24.05 ms, sum: 6.6388040897980005E-9
+JAFAMA   ulp: 24.95 ms, sum: 6.6388040897980005E-9
+
+JDK      atan2: 661.3 ms, sum: 138230.07675784838
+Crucible atan2: 242.2 ms, sum: 138230.07675784838
+JAFAMA   atan2: 162.8 ms, sum: 138230.07675784838
+
+JDK      floor: 31.55 ms, sum: -1980000.0
+Crucible floor: 17.07 ms, sum: -1980000.0
+JAFAMA   floor: 17.85 ms, sum: -1980000.0
+
+JDK      hypot: 4.078 s, sum: 2697063.2685400033
+Crucible hypot: 101.6 ms, sum: 2697063.2685400033
+JAFAMA   hypot: 91.95 ms, sum: 2697063.2685400033
+
+JDK      log10: 131.4 ms, sum: NaN
+Crucible log10: 132.5 ms, sum: NaN
+JAFAMA   log10: 125.7 ms, sum: NaN
+
+JDK      round: 17.54 ms, sum: 20000
+Crucible round: 16.86 ms, sum: 20000
+JAFAMA   round: 17.96 ms, sum: 20000
+
+JDK      acos: 614.1 ms, sum: NaN
+Crucible acos: 86.80 ms, sum: NaN
+JAFAMA   acos: 53.83 ms, sum: NaN
+
+JDK      asin: 641.7 ms, sum: NaN
+Crucible asin: 50.78 ms, sum: NaN
+JAFAMA   asin: 48.16 ms, sum: NaN
+
+JDK      atan: 245.5 ms, sum: 1.8496315590255108E-13
+Crucible atan: 116.8 ms, sum: 1.8496315590255108E-13
+JAFAMA   atan: 107.9 ms, sum: 1.8496315590255108E-13
+
+JDK      cbrt: 296.3 ms, sum: 4.884981308350689E-14
+Crucible cbrt: 120.3 ms, sum: 4.884981308350689E-14
+JAFAMA   cbrt: 105.6 ms, sum: 4.884981308350689E-14
+
+JDK      ceil: 22.33 ms, sum: 1980000.0
+Crucible ceil: 18.61 ms, sum: 1980000.0
+JAFAMA   ceil: 18.71 ms, sum: 1980000.0
+
+JDK      cosh: 353.0 ms, sum: 4.875950644236755E13
+Crucible cosh: 52.16 ms, sum: 4.875950644236755E13
+JAFAMA   cosh: 112.4 ms, sum: 4.875950644236755E13
+
+JDK      sinh: 441.7 ms, sum: -2.771615982055664E-6
+Crucible sinh: 141.1 ms, sum: -2.473592758178711E-6
+JAFAMA   sinh: 132.5 ms, sum: -2.473592758178711E-6
+
+JDK      sqrt: 28.18 ms, sum: NaN
+Crucible sqrt: 24.38 ms, sum: NaN
+JAFAMA   sqrt: 23.62 ms, sum: NaN
+
+JDK      tanh: 458.5 ms, sum: 1.1368683772161603E-13
+Crucible tanh: 133.6 ms, sum: 1.1368683772161603E-13
+JAFAMA   tanh: 119.1 ms, sum: 1.1368683772161603E-13
+
+JDK      max: 23.08 ms, sum: 1174800.0000021034
+Crucible max: 21.43 ms, sum: 1174800.0000021034
+JAFAMA   max: 22.15 ms, sum: 1174800.0000021034
+
+JDK      max: 12.62 ms, sum: 117480000
+Crucible max: 18.02 ms, sum: 117480000
+
+JDK      toRadians: 35.23 ms, sum: 3.4416913763379853E-15
+Crucible toRadians: 14.23 ms, sum: 5.2735593669694936E-15
+JAFAMA   toRadians: 17.03 ms, sum: 5.2735593669694936E-15
+
+JDK      toDegrees: 34.54 ms, sum: -3.342393029015511E-11
+Crucible toDegrees: 17.62 ms, sum: -3.319655661471188E-11
+JAFAMA   toDegrees: 19.54 ms, sum: -3.319655661471188E-11
+
+JDK      min: 19.94 ms, sum: -117480000
+Crucible min: 20.62 ms, sum: -117480000
+
+JDK      abs: 9.337 ms, sum: 4002000000
+Crucible abs: 8.800 ms, sum: 4002000000
+
+JDK      abs: 14.73 ms, sum: 4.002000000000001E7
+Crucible abs: 16.41 ms, sum: 4.002000000000001E7
+JAFAMA   abs: 14.63 ms, sum: 4.002000000000001E7
+
+JDK      signum: 16.20 ms, sum: 0.0
+Crucible signum: 30.68 ms, sum: 0.0
+JAFAMA   signum: 28.58 ms, sum: 0.0
+

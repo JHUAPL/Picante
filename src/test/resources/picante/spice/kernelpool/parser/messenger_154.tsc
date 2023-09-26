@@ -1,0 +1,331 @@
+\begintext
+
+FILENAME = "messenger_154.tsc"
+CREATION_DATE = "19-Jul-2005"
+
+
+MESSENGER Spacecraft Clock Kernel (SCLK)
+===========================================================================
+
+     This file is a SPICE spacecraft clock (SCLK) kernel containing
+     information required for time conversions involving the on-board
+     MESSENGER spacecraft clock.
+ 
+Version
+--------------------------------------------------------
+
+     MESSENGER SCLK Kernel Version:
+	
+     Version 1.0 -- October 15, 2004 -- Stan Cooper
+        Modified clock change rate in initial time coefficients triplet
+        to reflect actual rate observed.  This was requested by Joe
+        Harrison to support generation of Attitude History File.
+
+     Version 0.4a -- August 3, 2004 -- Stan Cooper
+        Initial (seed) time coefficients triplet set for a launch
+        time of 2004-216-06-15-56 UTC by T. J. Mulich prior to launch.
+
+     Version 0.3d -- April 1, 2004 -- Stan Cooper
+        Corrected the statement "SPICE uses linear interpolation" to 
+        "SPICE uses linear extrapolation" after confirming with Scott
+        Turner that extrapolation is indeed used.
+
+     Version 0.2 -- June 25, 2003 -- Scott Turner and Stan Cooper
+
+        Stan observed that the number of digits representing
+        fractional seconds present in the TDT component of the 
+        SCLK coefficient triples were inadequate for MESSENGER's
+        requirements.  The field now contains 6 digits instead of 3.
+
+     Version 0.1 -- June 23, 2003 -- Scott Turner
+
+        This kernel was created as an initial input to the MESSENGER
+        SCLK update process.  It provides values for the fields 
+        required to handle the SCLK string format, as well as the
+        baseline units of the clock correlation coefficients that
+        the update process is to introduce or correct.  The initial
+        clock rate established in this file assumes no drift from 
+        the parallel time system (TDT).  Further the clock coefficients 
+        indicate the clock starts on the following epoch:
+
+                   1/0:0                         (SCLK)
+                   01-JAN-2003-00:01:04.184       (TDT) 
+
+        The end of the first partition is currently defined as the value
+        in ticks of the rollover of the spacecraft clock.
+ 
+Usage
+--------------------------------------------------------
+
+     This file is used by the SPICE system as follows: programs that
+     make use of this SCLK kernel must 'load' the kernel, normally
+     during program initialization.  Loading the kernel associates
+     the data items with their names in a data structure called the
+     'kernel pool'.  The SPICELIB routine FURNSH loads text kernel
+     files, such as this one, into the pool as shown below:
+
+        FORTRAN:
+
+                  CALL FURNSH ( SCLK_kernel_name )
+
+        C:
+
+                  furnsh_c ( SCLK_kernel_name );
+
+     Once loaded, the SCLK time conversion routines will be able to
+     access the necessary data located in this kernel for their 
+     designed purposes.
+
+References
+--------------------------------------------------------
+ 
+         1.   "SCLK Required Reading"
+
+Inquiries
+--------------------------------------------------------
+
+     If you have any questions regarding this file or its usage, 
+     contact:
+
+           Scott Turner
+           (443)778-1693
+           Scott.Turner@jhuapl.edu
+
+Kernel Data
+--------------------------------------------------------
+
+     The first block of keyword equals value assignments define the
+     type, parallel time system, and format of the spacecraft clock.
+     These fields are invariant from SCLK kernel update to SCLK 
+     kernel update.    
+
+     The MESSENGER spacecraft clock is represented by the SPICE
+     type 1 SCLK kernel.  It uses TDT, Terrestrial Dynamical Time,
+     as its parallel time system.
+
+\begindata
+
+SCLK_KERNEL_ID             = ( @2005-07-19T14:25:31 )
+SCLK_DATA_TYPE_236         = (        1 )
+SCLK01_TIME_SYSTEM_236     = (        2 )
+
+
+\begintext
+
+     In a particular partition of the MESSENGER spacecraft clock,
+     the clock read-out consists of two separate stages:
+
+                           1/16458912:103412
+
+     The first stage, a 28 bit field, represents the spacecraft
+     clock seconds count.  The second, a 20 bit field, represents
+     the spacecraft clock microseconds count. 
+
+     The following keywords and their values establish this structure:
+
+\begindata
+
+SCLK01_N_FIELDS_236        = (            2 )
+SCLK01_MODULI_236          = (    268435456     1000000 )
+SCLK01_OFFSETS_236         = (            0           0 )
+SCLK01_OUTPUT_DELIM_236    = (            2 )
+
+
+\begintext
+
+     This concludes the invariant portion of the SCLK kernel data.  The
+     remaining sections of the kernel may require updates as the clock
+     correlation coefficients evolve in time.  The first section below
+     establishes the clock partitions.  The data in this section consists
+     of two parallel arrays, which denote the start and end values in 
+     ticks of each partition of the spacecraft clock.
+
+     SPICE utilizes these two arrays to map from spacecraft clock ticks,
+     determined with the usual modulo arithmetic, to encoded SCLK--the
+     internal, monotonically increasing sequence used to tag various 
+     data sources with spacecraft clock.
+
+\begindata
+
+SCLK_PARTITION_START_236   = ( 0.00000000000000e+00 )
+
+SCLK_PARTITION_END_236     = ( 2.68435455999999e+14 )
+
+\begintext
+
+     The remaining section of the SCLK kernel defines the clock correlation
+     coefficients.  Each line contains a 'coefficient triple':
+
+         Encoded SCLK at which Rate is introduced.
+         Corresponding TDT Epoch at which Rate is introduced.
+         Rate in TDT (seconds) / most significant clock count (~seconds).
+
+     SPICE uses linear extrapolation to convert between the parallel time
+     system and encoded SCLK.  The triples are stored in the array defined
+     below:
+
+     The first time triple below was entered manually and represents the
+     approximate time at which MET is set to zero.  The plan for MESSENGER
+     is that MET will be set to zero at 1000 seconds prior to launch so 
+     that G&C onboard TDT will be valid prior to and at launch.
+
+\begindata
+
+SCLK01_COEFFICIENTS_236    = ( 
+
+                   0     @03-AUG-2004-06:00:20.184000     1.00001013271       
+        117054000000     @04-AUG-2004-14:31:15.370074     1.00000791646       
+        203455000000     @05-AUG-2004-14:31:17.054064     1.00000854345       
+        250243000000     @06-AUG-2004-03:31:05.453795     1.00000827300       
+        376241000000     @07-AUG-2004-14:31:04.496176     1.00000728895       
+        540044000000     @09-AUG-2004-12:01:08.690128     1.00000720141       
+        712869000000     @11-AUG-2004-12:01:34.934711     1.00000755705       
+        797647000000     @12-AUG-2004-11:34:33.575383     1.00000805489       
+       1141237000000     @16-AUG-2004-11:01:06.342964     1.00000801314       
+       1225851000000     @17-AUG-2004-10:31:21.020988     1.00000796523       
+       1299623000000     @18-AUG-2004-07:00:53.608599     1.00000788938       
+       1485018000000     @20-AUG-2004-10:30:50.071250     1.00000773154       
+       1735231000000     @23-AUG-2004-08:01:05.005783     1.00000687309       
+       1917010000000     @25-AUG-2004-10:30:45.255166     1.00000643629       
+       1992611000000     @26-AUG-2004-07:30:46.741756     1.00000642613       
+       2091619000000     @27-AUG-2004-11:00:55.377994     1.00000097991       
+       2253331000000     @29-AUG-2004-07:56:07.536458     1.00000001527       
+       2435704000000     @31-AUG-2004-10:35:40.539242     1.00000001502       
+       2521803000000     @01-SEP-2004-10:30:39.540535     1.00000001476       
+       2606699000000     @02-SEP-2004-10:05:35.541788     1.00000001495       
+       2680197000000     @03-SEP-2004-06:30:33.542887     1.00000001485       
+       2765394000000     @04-SEP-2004-06:10:30.544152     1.00000001492       
+       2861097000000     @05-SEP-2004-08:45:33.545580     1.00000001476       
+       3109192000000     @08-SEP-2004-05:40:28.549243     1.00000001884       
+       3179992000000     @09-SEP-2004-01:20:28.550577     1.00000001497       
+       3291298000000     @10-SEP-2004-08:15:34.552243     1.00000001491       
+       3359689000000     @11-SEP-2004-03:15:25.553263     1.00000001488       
+       3446090000000     @12-SEP-2004-03:15:26.554549     1.00000001488       
+       3699595000000     @15-SEP-2004-01:40:31.558320     1.00000098755       
+       3783583000000     @16-SEP-2004-01:00:19.641262     1.00000760870       
+       3874781000000     @17-SEP-2004-02:20:18.335160     1.00000745828       
+       4215574000000     @21-SEP-2004-01:00:13.876889     1.00000746889       
+       4305569000000     @22-SEP-2004-02:00:09.549052     1.00000736992       
+       4409372000000     @23-SEP-2004-06:50:13.314072     1.00000650125       
+       4517064000000     @24-SEP-2004-12:45:06.014205     1.00000649688       
+       4547967000000     @24-SEP-2004-21:20:09.214978     1.00000627581       
+       4814062000000     @27-SEP-2004-23:15:05.884939     1.00000707565       
+       4986259000000     @29-SEP-2004-23:05:04.103344     1.00000712740       
+       5106557000000     @01-OCT-2004-08:30:02.960756     1.00000701191       
+       5365752000000     @04-OCT-2004-08:29:59.778208     1.00000692950       
+       5538543000000     @06-OCT-2004-08:29:51.975563     1.00000805716       
+       5590746000000     @06-OCT-2004-22:59:55.396171     1.00000711374       
+       5768641000000     @09-OCT-2004-00:24:51.661669     1.00000680595       
+       6015238000000     @11-OCT-2004-20:54:50.339995     1.00000676608       
+       6194635000000     @13-OCT-2004-22:44:48.553809     1.00000675664       
+       6289646000000     @15-OCT-2004-01:08:20.195764     1.00000683119       
+       6323626000000     @15-OCT-2004-10:34:40.427888     1.00000686137       
+       6646426000000     @19-OCT-2004-04:14:42.642738     1.00000685333       
+       6797023000000     @20-OCT-2004-22:04:40.674829     1.00000684287       
+       6882888000000     @21-OCT-2004-21:55:46.262392     1.00000684390       
+       6922715000000     @22-OCT-2004-08:59:33.534964     1.00000686175       
+       7238013000000     @26-OCT-2004-00:34:33.698460     1.00000687507       
+       7399710000000     @27-OCT-2004-21:29:31.810138     1.00000689525       
+       7452207000000     @28-OCT-2004-12:04:29.172118     1.00000693607       
+       7579971000000     @29-OCT-2004-23:33:54.058298     1.00000695735       
+       7828103000000     @01-NOV-2004-20:29:27.784639     1.00000713375       
+       8013800000000     @04-NOV-2004-00:04:26.109355     1.00000715180       
+       8039893000000     @04-NOV-2004-07:19:19.295967     1.00000718014       
+       8118798000000     @05-NOV-2004-05:14:24.862516     1.00000722047       
+       8473991000000     @09-NOV-2004-07:54:20.427176     1.00000733326       
+       8556188000000     @10-NOV-2004-06:44:18.029948     1.00000738069       
+       8572083000000     @10-NOV-2004-11:09:13.147264     1.00000738030       
+       8633582000000     @11-NOV-2004-04:14:12.601145     1.00000738196       
+       8699587000000     @11-NOV-2004-22:34:18.088391     1.00000751692       
+       8785684000000     @12-NOV-2004-22:29:15.735575     1.00000752592       
+       8877482000000     @13-NOV-2004-23:59:14.426439     1.00000754443       
+       9044880000000     @15-NOV-2004-22:29:13.689362     1.00000759084       
+       9136078000000     @16-NOV-2004-23:49:12.381631     1.00000743767       
+       9307974000000     @18-NOV-2004-23:34:09.660136     1.00000683887       
+       9409073000000     @20-NOV-2004-03:39:09.351539     1.00000673915       
+       9509266000000     @21-NOV-2004-07:29:03.026755     1.00000679915       
+       9655069000000     @22-NOV-2004-23:59:07.018091     1.00000682948       
+       9736967000000     @23-NOV-2004-22:44:05.577412     1.00000686967       
+       9814962000000     @24-NOV-2004-20:24:01.113212     1.00000689978       
+      10084361000000     @27-NOV-2004-23:14:01.972006     1.00000722880       
+      10258065000000     @29-NOV-2004-23:29:07.227677     1.00000779820       
+      10445259000000     @02-DEC-2004-03:29:02.687453     1.00000776466       
+      10603657000000     @03-DEC-2004-23:29:01.917359     1.00000787083       
+      10855662000000     @06-DEC-2004-21:29:08.900848     1.00000793656       
+      10948643000000     @07-DEC-2004-23:18:50.638797     1.00000787511       
+      11044647000000     @09-DEC-2004-01:58:55.394839     1.00000822783       
+      11194943000000     @10-DEC-2004-19:43:52.631449     1.00000817666       
+      11456837000000     @13-DEC-2004-20:28:48.772868     1.00000835876       
+      11639536000000     @15-DEC-2004-23:13:49.300006     1.00000835293       
+      11767623000000     @17-DEC-2004-10:48:37.369908     1.00000829301       
+      12321297000000     @23-DEC-2004-20:36:35.961532     1.00000865183       
+      12933421000000     @30-DEC-2004-22:38:45.257527     1.00000907116       
+      13557513000000     @07-JAN-2005-04:00:22.918763     1.00000918363       
+      14601647000000     @19-JAN-2005-06:02:46.507701     1.00000915881       
+      15088201000000     @24-JAN-2005-21:12:04.963959     1.00000973275       
+      15693478000000     @31-JAN-2005-21:20:07.854966     1.00001078939       
+      16581860000000     @11-FEB-2005-04:06:39.440063     1.00001142359       
+      17247330000000     @18-FEB-2005-20:57:57.042120     1.00001211270       
+      17873514000000     @26-FEB-2005-02:54:28.626896     1.00001278729       
+      18723168000000     @07-MAR-2005-22:55:33.491664     0.99999770879       
+      18963022000000     @10-MAR-2005-17:33:06.942107     0.99998820493       
+      19666035000000     @18-MAR-2005-20:49:51.650020     0.99998806988       
+      20271219000000     @25-MAR-2005-20:56:08.430101     0.99998856202       
+      20953439000000     @02-APR-2005-18:26:20.626880     0.99998936280       
+      21481094000000     @08-APR-2005-21:00:30.014110     0.99999006016       
+      22088004000000     @15-APR-2005-21:35:33.981521     0.99999007148       
+      22653282000000     @22-APR-2005-10:36:46.369148     0.99999079848       
+      23033785000000     @26-APR-2005-20:18:25.867941     1.00000001654       
+      23122593000000     @27-APR-2005-20:58:33.869410     1.00000001659       
+      23207509000000     @28-APR-2005-20:33:49.870819     1.00000001675       
+      23295485000000     @29-APR-2005-21:00:05.872293     1.00000001694       
+      23551604000000     @02-MAY-2005-20:08:44.876631     1.00000001710       
+      23666832000000     @04-MAY-2005-04:09:12.878601     1.00000001702       
+      23724402000000     @04-MAY-2005-20:08:42.879581     1.00000001711       
+      23812395000000     @05-MAY-2005-20:35:15.881087     1.00000001713       
+      23897847000000     @06-MAY-2005-20:19:27.882551     1.00000001714       
+      24166340000000     @09-MAY-2005-22:54:20.887153     1.00000002243       
+      24326073000000     @11-MAY-2005-19:16:33.890736     1.00000000795       
+      24415534000000     @12-MAY-2005-20:07:34.891447     1.00000001716       
+      24516413000000     @14-MAY-2005-00:08:53.893178     1.00000001721       
+      24772920000000     @16-MAY-2005-23:24:00.897592     1.00000001733       
+      24846163000000     @17-MAY-2005-19:44:43.898861     1.00000002517       
+      24929330000000     @18-MAY-2005-18:50:50.900954     1.00000001224       
+      25063036000000     @20-MAY-2005-07:59:16.902590     1.00000001718       
+      25362714000000     @23-MAY-2005-19:13:54.907738     1.00000001715       
+      25446213000000     @24-MAY-2005-18:25:33.909170     1.00000001960       
+      25632557000000     @26-MAY-2005-22:11:17.912822     1.00000001564       
+      25963200000000     @30-MAY-2005-18:02:00.917993     1.00000001704       
+      26095053000000     @01-JUN-2005-06:39:33.920240     1.00000001993       
+      26222769000000     @02-JUN-2005-18:08:09.922786     1.00000001614       
+      26654011000000     @07-JUN-2005-17:55:31.929745     1.00000001689       
+      26845107000000     @09-JUN-2005-23:00:27.932972     1.00000001678       
+      26900894000000     @10-JUN-2005-14:30:14.933908     1.00000001686       
+      27193045000000     @13-JUN-2005-23:39:25.938834     1.00000001663       
+      27268106000000     @14-JUN-2005-20:30:26.940082     1.00000001656       
+      27327289000000     @15-JUN-2005-12:56:49.941062     1.00000001664       
+      27514793000000     @17-JUN-2005-17:01:53.944182     1.00000001650       
+      27796113000000     @20-JUN-2005-23:10:33.948824     1.00000001635       
+      27853672000000     @21-JUN-2005-15:09:52.949765     1.00000001645       
+      27968944000000     @22-JUN-2005-23:11:04.951661     1.00000001637       
+      28049318000000     @23-JUN-2005-21:30:38.952977     1.00000001650       
+      28141396000000     @24-JUN-2005-23:05:16.954496     1.00000001638       
+      28393218000000     @27-JUN-2005-21:02:18.958622     1.00000001604       
+      28522750000000     @29-JUN-2005-09:01:10.960700     1.00000001595       
+      28565575000000     @29-JUN-2005-20:54:55.961383     1.00000001624       
+      28655679000000     @30-JUN-2005-21:56:39.962846     1.00000001615       
+      28741958000000     @01-JUL-2005-21:54:38.964239     1.00000001607       
+      29103193000000     @06-JUL-2005-02:15:13.970045     1.00000001613       
+      29177777000000     @06-JUL-2005-22:58:17.971248     1.00000001600       
+      29263724000000     @07-JUL-2005-22:50:44.972623     1.00000001597       
+      29350636000000     @08-JUL-2005-22:59:16.974011     1.00000001684       
+      29436820000000     @09-JUL-2005-22:55:40.975462     1.00000001544       
+      29609722000000     @11-JUL-2005-22:57:22.978131     1.00000001583       
+      29695720000000     @12-JUL-2005-22:50:40.979492     1.00000001579       
+      29782522000000     @13-JUL-2005-22:57:22.980863     1.00000001581       
+      29868232000000     @14-JUL-2005-22:45:52.982218     1.00000001575       
+      29954703000000     @15-JUL-2005-22:47:03.983580     1.00000001573       
+      30040789000000     @16-JUL-2005-22:41:49.984934     1.00000001558       
+      30217973000000     @18-JUL-2005-23:54:53.987695     1.00000001563       
+
+)

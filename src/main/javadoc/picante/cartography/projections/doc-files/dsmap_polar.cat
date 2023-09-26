@@ -1,0 +1,89 @@
+PDS_VERSION_ID                    = PDS3
+LABEL_REVISION_NOTE               = "
+          2009-03-15 original release;
+          2009-12-15 revised projection description - scale in meters
+          per pixel is exact; removed old text related to pixels per degree.
+          2013-11-12 revised explanation for conversion from lat/lon to 
+          line/sample.
+          "
+
+RECORD_TYPE                       = STREAM
+
+OBJECT                            = DATA_SET_MAP_PROJECTION
+ DATA_SET_ID                      = "LRO-L-LOLA-4-GDR-V1.0"
+ TARGET_NAME                      = MOON
+
+ OBJECT                           = DATA_SET_MAP_PROJECTION_INFO
+  MAP_PROJECTION_TYPE             = "POLAR STEREOGRAPHIC"
+  MAP_PROJECTION_DESC             = "
+
+In this polar stereographic projection [SNYDER1987], the projection is
+centered on the north or south pole. Lines of longitude extend
+radially from the center and parallels of latitude are concentric
+circles around the center. In the north, Longitude 0 extends straight
+down from the center and Longitude 90 East extends to the right.
+In the south, Longitude 0 extends straight up from the center, and
+Longitude 90 East extends to the right.  The LOLA Team adopts a spherical
+geometry with a radius of 1737.4 km, with a spacing of an integral number
+of meters per pixel at the pole. The projection MAP_SCALE keyword is exact.
+MAP_RESOLUTION is the approximate number of pixels per degree of latitude
+at the pole. The MAXIMUM or MINIMUM_LATITUDE keywords are approximately
+the extent of the map coverage at the edge of the projected image, but
+the corners extend further, i.e., the 60 degree map will extend to latitude
+48.48755 degrees at the corners and to 59.996 degrees at the edges.
+
+The transformation from line and sample coordinates to planetocentric
+latitude and longitude is given by these equations.
+
+   X = (I - N/2 - 0.5)*MAP_SCALE
+   Y = (J - N/2 - 0.5)*MAP_SCALE
+
+   R = SQRT(X^2 + Y^2)
+
+   LON = ATAN2(X,Y) * 180/PI
+   LAT =  90 - 180/PI * 2*ATAN(0.5 * R/1737400) (northern hemisphere)
+   LAT = -90 + 180/PI * 2*ATAN(0.5 * R/1737400) (southern hemisphere)
+
+where
+
+   I = sample coordinate
+   J = line coordinate
+   X,Y = I,J converted to Cartesian coordinate system with 0,0 at center
+   MAP_SCALE = the map resolution in meters per pixel
+   N = the number of lines or samples per line in the image
+       (the images are square)
+   R = radius from center of map to pixel I,J in meters
+   LON = east longitude of pixel I,J in degrees
+   LAT = latitude of pixel I,J in degrees
+
+Values for RES and N can be found in the image label as the
+keywords MAP_RESOLUTION and LINES.
+
+The transformation from latitude and longitude to SAMPLE and LINE
+indices (I,J) is
+
+   R = 2*1737400*TAN((90-LAT) * PI/360)
+   X = R*SIN(LON*PI/180)
+   Y = R*COS(LON*PI/180)
+   I = NINT(X/MAP_SCALE + N/2 + 0.5)
+   J = NINT(Y/MAP_SCALE + N/2 + 0.5)
+
+NINT is a Fortran intrinsic rounding function, identical to the C math.h
+library function rint.  In the case of half-integer values, the NINT
+function rounds to the nearest even whole number.
+"
+
+  ROTATIONAL_ELEMENT_DESC         = "See [SEIDELMANNETAL2002]."
+
+  OBJECT                          = DS_MAP_PROJECTION_REF_INFO
+   REFERENCE_KEY_ID               = "SEIDELMANNETAL2002"
+  END_OBJECT                      = DS_MAP_PROJECTION_REF_INFO
+
+  OBJECT                          = DS_MAP_PROJECTION_REF_INFO
+   REFERENCE_KEY_ID               = "SNYDER1987"
+  END_OBJECT                      = DS_MAP_PROJECTION_REF_INFO
+
+ END_OBJECT                       = DATA_SET_MAP_PROJECTION_INFO
+END_OBJECT                        = DATA_SET_MAP_PROJECTION
+
+END

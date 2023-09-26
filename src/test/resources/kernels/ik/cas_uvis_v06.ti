@@ -1,0 +1,1416 @@
+KPL/IK
+ 
+ 
+UVIS Instrument Kernel
+==============================================================================
+ 
+   This instrument kernel (I-kernel) contains references to the mounting
+   alignment, internal and FOV geometry for the Cassini Ultraviolet Imaging
+   Spectograph (UVIS) instruments.
+ 
+ 
+Version and Date
+----------------------------------------------------------
+ 
+   The TEXT_KERNEL_ID stores version information of loaded project text
+   kernels. Each entry associated with the keyword is a string that consists
+   of four parts: the kernel name, version, entry date, and type. For example,
+   the ISS I-kernel might have an entry as follows:
+ 
+           TEXT_KERNEL_ID += 'CASSINI_ISS V0.0.0 29-SEPTEMBER-1999 IK'
+                                  |          |         |            |
+                                  |          |         |            |
+              KERNEL NAME <-------+          |         |            |
+                                             |         |            V
+                             VERSION <-------+         |       KERNEL TYPE
+                                                       |
+                                                       V
+                                                  ENTRY DATE
+ 
+   UVIS I-Kernel Version:
+ 
+           \begindata
+ 
+           TEXT_KERNEL_ID += 'CASSINI_UVIS V0.6.0 05-NOVEMBER-2008 IK'
+ 
+           \begintext
+ 
+   Version 0.6 -- November 5, 2008 -- Boris Semenov
+ 
+            --   Added name/ID mapping, FOV, and other parameters for
+                 CASSINI_UVIS_SOL_OFF/-82849. (See [11])
+ 
+            --   Revised the ``Implementation Notes'' section and
+                 spell-checked comments in the whole file.
+ 
+   Version 0.5 -- April 23, 2001 -- Scott Turner
+ 
+            --   Updated kernel to utilize new FOV ANGLES specification.
+ 
+            --   Updated CASSINI_UVIS_SOLAR FOV definition to the correct
+                 value. See [10] for details.
+ 
+   Version 0.4 -- November 20, 2000 -- Scott Turner
+ 
+            --   Added the CASSINI_UVIS_SOLAR FOV definition.
+ 
+            --   Changed the CASSINI_UVIS_EUV_OCC and CASSINI_UVIS_FUV_OCC
+                 FOV_FRAME keywords to refer to CASSINI_UVIS_EUV and
+                 CASSINI_UVIS_FUV respectively.
+ 
+   Version 0.3 -- October 3, 2000 -- Scott Turner
+ 
+            --   Fixed a few minor mistakes in the text documenting boundary
+                 corner vector calculations for the UVIS_HDAC FOV.
+ 
+            --   Added source code samples for computing FOV angular extents
+                 from the FOV definitions provided using SPICELIB and CSPICE.
+ 
+   Version 0.2 -- August 15, 2000 -- Scott Turner
+ 
+            --   Recalculated FOV definitions to enhance precision.
+ 
+   Version 0.1 -- June 7, 2000 -- Scott Turner
+ 
+            --   Changed the INS[#]_FOV_CENTER_PIXEL keyword to reflect
+                 changes in the I-kernel SIS.
+ 
+   Version 0.0 -- March 27, 2000 -- Scott Turner
+ 
+            --   Initial Prototype Release for Review.
+ 
+ 
+References
+----------------------------------------------------------
+ 
+            1.   ``Cassini Science Instruments and Investigations'', Revised
+                 Second Printing. Stephen J. Edberg.
+ 
+            2.   ``Kernel Pool Required Reading''
+ 
+            3.   JPL Cassini Project Web Page describing the instruments.
+ 
+            4.   Cassini/NAIF SPICE Workshop, November 8-9, 1999.
+ 
+            5.   Email from Jeff Boyer regarding necessary data for footprint
+                 calculations.
+ 
+            6.   Cassini Spacecraft Frames Definition Kernel
+ 
+            7.   CASPER UVIS I-kernel Version 5.0
+ 
+            8.   CASPER HDAC I-kernel Version 2.0
+ 
+            9.   Email from Joshua Colwell regarding CASSINI_UVIS_SOLAR FOV
+                 definition and corrections the the CASSINI_UVIS_EUV_OCC and
+                 CASSINI_UVIS_FUV_OCC FOV definitions.
+ 
+           10.   Email from Joshua Colwell describing the official values of
+                 the CASSINI_UVIS_SOLAR FOV angular extent.
+ 
+           11.   Email from Diane Conner, 11/04/08, providing suggested FK and
+                 IK changes per ECR-108546 ``Add UVIS_SOL_OFF vector to SPICE
+                 Frame, Instrument, and Status Kernels''.
+ 
+ 
+Contact Information
+----------------------------------------------------------
+ 
+   Direct questions, comments or concerns about the contents of this kernel
+   to:
+ 
+           Boris Semenov, NAIF/JPL, (818)-354-8136, Boris.Semenov@jpl.nasa.gov
+ 
+ 
+Implementation Notes
+----------------------------------------------------------
+ 
+   This file is used by the SPICE system as follows: programs that make use of
+   this instrument kernel must ``load'' the kernel, normally during program
+   initialization. Loading the kernel associates data items with their names
+   in a data structure called the ``kernel pool''. The SPICE routine FURNSH
+   loads SPICE kernels as shown below:
+ 
+           FORTRAN: (SPICELIB)
+ 
+              CALL FURNSH ( frame_kernel_name )
+ 
+           C: (CSPICE)
+ 
+              furnsh_c ( frame_kernel_name );
+ 
+           IDL: (Icy)
+ 
+              cspice_furnsh, frame_kernel_name
+ 
+           MATLAB: (Mice)
+ 
+              cspice_furnsh( frame_kernel_name )
+ 
+   In order for a program or subroutine to extract data from the pool, the
+   SPICE routines GDPOOL, GIPOOL, and GCPOOL (see [2]) and GETFOV are used.
+ 
+   This file was created and may be updated with a text editor or word
+   processor.
+ 
+ 
+Naming Conventions
+----------------------------------------------------------
+ 
+   All names referencing values in this I-kernel start with the characters
+   `INS' followed by the NAIF Cassini spacecraft ID number (-82) followed by a
+   NAIF three digit code for the UVIS detectors. (FUV_HI = 840, FUV_LO = 841,
+   EUV_HI = 842, EUV_LO = 843, FUV_OCC = 845, EUV_OCC = 846, HSP = 844, HDAC =
+   847, SOLAR = 848, SOL_OFF = 849).
+ 
+   The remainder of the name is an underscore character followed by the unique
+   name of the data item. For example, the UVIS FUV_HI boresight direction in
+   the UVIS FUV frame (``CASSINI_UVIS'' -- see [6] ) is specified by:
+ 
+           INS-82840_BORESIGHT
+ 
+   The upper bound on the length of the name of any data item is 32
+   characters.
+ 
+   If the same item is included in more than one file, or if the same item
+   appears more than once within a single file, the latest value supersedes
+   any earlier values.
+ 
+ 
+UVIS description
+----------------------------------------------------------
+ 
+   From [3]:
+ 
+   A spectrograph is an instrument that records spectral intensity information
+   in one or more wavelengths of energy and then outputs the data in the form
+   of a graph. (A spectrometer, in contrast, outputs spectral information as
+   numerical data.) An imaging spectrograph converts the points on the graph
+   to digital data that can be output in the form of a visual image, such as a
+   "false color" picture.
+ 
+   The Ultraviolet Imaging Spectrograph Subsystem (UVIS) is a set of detectors
+   designed to measure ultraviolet light reflected by or emitted from
+   atmospheres, rings, and surfaces to determine their compositions,
+   distributions, aerosol contents, and temperatures. The UVIS will measure
+   the fluctuations of starlight and sunlight as the sun and stars move behind
+   the rings and the atmospheres of Titan and Saturn, and it will determine
+   the atmospheric concentrations of hydrogen and deuterium. These data will
+   be used for studies of the atmospheres, the magnetosphere, and the rings of
+   the Saturnian system.
+ 
+   The UVIS has two channels: the extreme ultraviolet channel and the far
+   ultraviolet channel. The ultraviolet channels are built into
+   weight-relieved aluminum cases, and each contains a reflecting telescope, a
+   concave grating spectrometer, and an imaging, pulse-counting detector. The
+   UVIS also includes a high-speed photometer channel, a hydrogen-deuterium
+   absorption cell channel, and an electronics and control subassembly. For
+   information on the UVIS components, see below.
+ 
+   (UVIS)
+ 
+   The extreme ultraviolet channel (EUV) will be used for imaging spectroscopy
+   and spectroscopic measurements of the structure and composition of the
+   atmospheres of Titan and Saturn. The EUV consists of a telescope with a
+   three-position slit changer, a baffle system, and a spectrograph with a
+   CODACON microchannel plate detector and associated electronics. The
+   telescope consists of an off-axis parabolic section with a focal length of
+   100 mm, a 22 mm by 30 mm aperture, and a baffle with a field of view of
+   3.67 degrees by 0.34 degrees. A precision mechanism positions one of the
+   three entrance slits at the focal plane of the telescope, each translating
+   to a different spectral resolution.
+ 
+   The spectrograph uses an aberration-corrected toroidal grating that focuses
+   the spectrum onto an imaging microchannel plate detector to achieve both
+   high sensitivity and spatial resolution along the entrance slit. The
+   microchannel plate detector electronics consists of a low-voltage power
+   supply, a programmable high-voltage power supply, charge-sensitive
+   amplifiers, and associated logic.
+ 
+   The EUV channel also contains a solar occultation mechanism to allow solar
+   flux to enter the telescope when the sun is still 20 degrees off-axis from
+   the primary telescope.
+ 
+   The far ultraviolet channel (FUV) will be used for imaging spectroscopy and
+   spectroscopic measurements of the structure and composition of the
+   atmospheres of Titan and Saturn and of the rings. The FUV is similar to the
+   EUV channel except for the grating ruling density, optical coatings, and
+   detector details. The FUV electronics are similar to those for the EUV
+   except for the addition of a high-voltage power supply for the ion pump.
+ 
+   The high-speed photometer channel (HSP) will perform stellar occultation
+   measurements of the structure and density of material in the rings. The HSP
+   resides in its own module and measures undispersed (zero-order) light from
+   its own parabolic mirror with a photomultiplier tube detector. The
+   electronics consists of a pulse-amplifier-discriminator and a fixed-level
+   high-voltage power supply.
+ 
+   The hydrogen-deuterium absorption cell channel (HDAC) will be used to
+   measure hydrogen and deuterium in the Saturn system using a hydrogen cell,
+   an oxygen cell, a deuterium cell, and a channel electron multiplier (CEM)
+   detector to record photons not absorbed in the cells. The hydrogen and
+   deuterium cells are resonance absorption cells filled with pure molecular
+   hydrogen and deuterium, respectively. They are located between an objective
+   lens and a detector. Both cells are made of stainless steel coated with
+   teflon and are sealed at each end with MgF2 windows. The electronics
+   consists of a pulse-amplifier-discriminator, a fixed-level high-voltage
+   power supply, and two filament current controllers.
+ 
+   The UVIS microprocessor electronics and control subassembly consists of
+   input-output elements, power conditioning, science data and housekeeping
+   data collection electronics, and microprocessor control elements.
+ 
+ 
+UVIS Field of View Parameters
+----------------------------------------------------------
+ 
+   The field of view parameters for the three focal planes that constitute the
+   UVIS detectors are:
+ 
+            --   Far Ultraviolet Spectrograph High (FUV_HI)
+ 
+            --   Far Ultraviolet Spectrograph Low (FUV_LO)
+ 
+            --   Far Ultraviolet Spectrograph Occultation Port (FUV_OCC)
+ 
+            --   Extreme Ultraviolet Spectrograph High (EUV_HI)
+ 
+            --   Extreme Ultraviolet Spectrograph Low (EUV_LO)
+ 
+            --   Extreme Ultraviolet Spectrograph Occultation Port (EUV_OCC)
+ 
+            --   Solar Occultation Port (SOLAR/SOL_OFF)
+ 
+            --   High Speed Photometer (HSP)
+ 
+            --   Hydrogen - Deuterium Absorption Cell (HDAC)
+ 
+   From [7], [8], and [9] we have:
+ 
+ 
+           Rectangular FOVs:
+ 
+           ------------  --------------------  --------------------
+             Detector         Horizontal             Vertical
+           ------------  --------------------  --------------------
+             FUV_HI         0.04297 degrees       3.6669 degrees
+ 
+             FUV_LO         0.08594 degrees       3.6669 degrees
+ 
+             FUV_OCC        0.48536 degrees       3.6669 degrees
+ 
+             EUV_HI         0.05729 degrees       3.6669 degrees
+ 
+             EUV_LO         0.11459 degrees       3.6669 degrees
+ 
+             EUV_OCC        0.48536 degrees       3.6669 degrees
+ 
+           SOLAR/SOL_OFF    0.45836 degrees       0.45836 degrees
+ 
+               HSP          0.34377 degrees       0.3666 degrees
+           ------------  --------------------  --------------------
+ 
+           Circular FOVs:
+ 
+           ------------  -------------------
+             Detector         Diameter
+           ------------  -------------------
+               HDAC          3.2 degrees
+           ------------  -------------------
+ 
+   The keywords INS[ID]_FOV_FRAME, INS[ID]_FOV_SHAPE, INS[ID]_BORESIGHT, and
+   FOV ANGLE specification keywords defined below are used to describe the
+   instrument field of view. Since the HDAC has a circular field of view and
+   the others are rectangular, the INS[ID]_FOV_SHAPE will either be 'CIRCLE'
+   or 'RECTANGLE'. In the case of the HDAC, GETFOV returns a single boundary
+   vector that lies along the edge of the circular cone, and for the others
+   four vectors. All FOV boresights lie along the Z-axis in their respective
+   frames.
+ 
+ 
+Far Ultraviolet Spectrograph High (FUV_HI) FOV Definition
+ 
+   Since FUV_HI is a rectangular field of view, four boundary corner vectors
+   require visualization. This means two separate calculations. First consider
+   looking down the X-axis at the X=0 plane which permits the computation of
+   the Y components of the boundary corner vectors. In this plane the half
+   angle of note is 1.83346495 degrees. (Note we are arbitrarily choosing a
+   vector that terminates in the Z=1 plane.)
+ 
+ 
+                                  ^ Y
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 1.833  |
+                                  x--------------->
+                                X  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane X = 0
+ 
+ 
+   Now from here we see that the Y component of one boundary corner vector is:
+ 
+           Y Component = +/- 1.0 * tan ( 1.83346495 degrees )
+                       = +/- 0.03201093
+ 
+   Since the field of view is rectangular a similar computation yields the X
+   components. This time look up the Y-axis at the Y=0 plane. The half angle
+   of interest is 0.02148592 degrees.
+ 
+ 
+                                  ^ X
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 0.021  |
+                                  o--------------->
+                                Y  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane Y = 0
+ 
+ 
+           X Component = +/- 1.0 * tan ( 0.02148592 degrees )
+                       = +/- 3.75000064D-4
+ 
+   This results in the following FOV definition:
+ 
+   Far Ultraviolet Spectrograph High (FUV_HI):
+ 
+           \begindata
+ 
+           INS-82840_FOV_FRAME                 = 'CASSINI_UVIS_FUV'
+           INS-82840_FOV_SHAPE                 = 'RECTANGLE'
+           INS-82840_BORESIGHT                 = (
+ 
+                  0.0000000000000000   0.0000000000000000  +1.0000000000000000
+ 
+                                                 )
+           INS-82840_FOV_CLASS_SPEC            = 'ANGLES'
+           INS-82840_FOV_REF_VECTOR            = (
+ 
+                  0.0000000000000000  +1.0000000000000000   0.0000000000000000
+ 
+                                                 )
+           INS-82840_FOV_REF_ANGLE             = ( 1.83346495 )
+           INS-82840_FOV_CROSS_ANGLE           = ( 0.02148592 )
+           INS-82840_FOV_ANGLE_UNITS           = 'DEGREES'
+ 
+           \begintext
+ 
+ 
+Far Ultraviolet Spectrograph Low (FUV_LO) FOV Definition
+ 
+   FUV_LO is also a rectangular field of view. Four boundary corner vectors
+   require visualization. First consider looking down the X-axis at the X=0
+   plane which permits the computation of the Y components of the boundary
+   corner vectors. In this plane the half angle of note is 1.83346495 degrees.
+   (Note we are arbitrarily choosing a vector that terminates in the Z=1
+   plane.)
+ 
+ 
+                                  ^ Y
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 1.833  |
+                                  x--------------->
+                                X  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane X = 0
+ 
+ 
+   Now from here we see that the Y component of one boundary corner vector is:
+ 
+           Y Component = +/- 1.0 * tan ( 1.83346495 degrees )
+                       = +/- 0.03201093
+ 
+   Since the field of view is rectangular a similar computation yields the X
+   components. This time look up the Y-axis at the Y=0 plane. The half angle
+   of interest is 0.0429718347 degrees.
+ 
+ 
+                                  ^ X
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 0.043  |
+                                  o--------------->
+                                Y  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane Y = 0
+ 
+ 
+           X Component = +/- 1.0 * tan ( 0.0429718347 degrees )
+                       = +/- 7.50000142D-4
+ 
+   Utilizing the ANGLES FOV specification:
+ 
+   Far Ultraviolet Spectrograph Low (FUV_LO):
+ 
+           \begindata
+ 
+           INS-82841_FOV_FRAME                 = 'CASSINI_UVIS_FUV'
+           INS-82841_FOV_SHAPE                 = 'RECTANGLE'
+           INS-82841_BORESIGHT                 = (
+ 
+                  0.0000000000000000   0.0000000000000000  +1.0000000000000000
+ 
+                                                 )
+           INS-82841_FOV_CLASS_SPEC            = 'ANGLES'
+           INS-82841_FOV_REF_VECTOR            = (
+ 
+                  0.0000000000000000  +1.0000000000000000   0.0000000000000000
+ 
+                                                 )
+           INS-82841_FOV_REF_ANGLE             = ( 1.83346495 )
+           INS-82841_FOV_CROSS_ANGLE           = ( 0.0429718347 )
+           INS-82841_FOV_ANGLE_UNITS           = 'DEGREES'
+ 
+           \begintext
+ 
+ 
+Far Ultraviolet Spectrograph Occultation Port (FUV_OCC) FOV Definition
+ 
+   FUV_OCC is also a rectangular field of view. Four boundary corner vectors
+   need visualization. First consider looking down the X-axis at the X=0 plane
+   which permits the computation of the Y components of the boundary corner
+   vectors. In this plane the half angle of note is 1.83346495 degrees. (Note
+   we are arbitrarily choosing a vector that terminates in the Z=1 plane.)
+ 
+ 
+                                  ^ Y
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 1.833  |
+                                  x--------------->
+                                X  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane X = 0
+ 
+ 
+   Now from here we see that the Y component of one boundary corner vector is:
+ 
+           Y Component = +/- 1.0 * tan ( 1.83346495 degrees )
+                       = +/- 0.03201093
+ 
+   Since the field of view is rectangular a similar computation yields the X
+   components. This time look up the Y-axis at the Y=0 plane. The half angle
+   of interest is 0.229183 degrees.
+ 
+ 
+                                  ^ X
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 0.229  |
+                                  o--------------->
+                                Y  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane Y = 0
+ 
+ 
+           X Component = +/- 1.0 * tan ( 0.229183 degrees )
+                       = +/- 0.0040000193
+ 
+   This results in the following FOV definition:
+ 
+   Far Ultraviolet Spectrograph Occultation Port (FUV_OCC):
+ 
+           \begindata
+ 
+           INS-82842_FOV_FRAME                 = 'CASSINI_UVIS_FUV'
+           INS-82842_FOV_SHAPE                 = 'RECTANGLE'
+           INS-82842_BORESIGHT                 = (
+ 
+                  0.0000000000000000   0.0000000000000000  +1.0000000000000000
+ 
+                                                 )
+           INS-82842_FOV_CLASS_SPEC            = 'ANGLES'
+           INS-82842_FOV_REF_VECTOR            = (
+ 
+                  0.0000000000000000  +1.0000000000000000   0.0000000000000000
+ 
+                                                 )
+           INS-82842_FOV_REF_ANGLE             = ( 1.83346495 )
+           INS-82842_FOV_CROSS_ANGLE           = ( 0.229183 )
+           INS-82842_FOV_ANGLE_UNITS           = 'DEGREES'
+ 
+           \begintext
+ 
+ 
+Extreme Ultraviolet Spectrograph High (EUV_HI) FOV Definition
+ 
+   EUV_HI is also a rectangular field of view. Four boundary corner vectors
+   require visualization. First consider looking down the X-axis at the X=0
+   plane which permits the computation of the Y components of the boundary
+   corner vectors. In this plane the half angle of note is 1.83346495 degrees.
+   (Note we are arbitrarily choosing a vector that terminates in the Z=1
+   plane.)
+ 
+ 
+                                  ^ Y
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 1.833  |
+                                  x--------------->
+                                X  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane X = 0
+ 
+ 
+   Now from here we see that the Y component of one boundary corner vector is:
+ 
+           Y Component = +/- 1.0 * tan ( 1.83346495 degrees )
+                       = +/- 0.03201093
+ 
+   Since the field of view is rectangular a similar computation yields the X
+   components. This time look up the Y-axis at the Y=0 plane. The half angle
+   of interest is 0.02864789 degrees.
+ 
+ 
+                                  ^ X
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 0.029  |
+                                  o--------------->
+                                Y  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane Y = 0
+ 
+ 
+           X Component = +/- 1.0 * tan ( 0.02864789 degrees )
+                       = +/- 5.00000045D-4
+ 
+   And we end up with the following FOV definition:
+ 
+   Extreme Ultraviolet Spectrograph High (EUV_HI):
+ 
+           \begindata
+ 
+           INS-82843_FOV_FRAME                 = 'CASSINI_UVIS_EUV'
+           INS-82843_FOV_SHAPE                 = 'RECTANGLE'
+           INS-82843_BORESIGHT                 = (
+ 
+                  0.0000000000000000   0.0000000000000000  +1.0000000000000000
+ 
+                                                 )
+           INS-82843_FOV_CLASS_SPEC            = 'ANGLES'
+           INS-82843_FOV_REF_VECTOR            = (
+ 
+                  0.0000000000000000  +1.0000000000000000   0.0000000000000000
+ 
+                                                 )
+           INS-82843_FOV_REF_ANGLE             = ( 1.83346495 )
+           INS-82843_FOV_CROSS_ANGLE           = ( 0.02864789 )
+           INS-82843_FOV_ANGLE_UNITS           = 'DEGREES'
+ 
+           \begintext
+ 
+ 
+Extreme Ultraviolet Spectrograph Low (EUV_LO) FOV Definition
+ 
+   EUV_LO is also a rectangular field of view. Four boundary corner vectors
+   require visualization. First consider looking down the X-axis at the X=0
+   plane which permits the computation of the Y components of the boundary
+   corner vectors. In this plane the half angle of note is 1.83346495 degrees.
+   (Note we are arbitrarily choosing a vector that terminates in the Z=1
+   plane.)
+ 
+ 
+                                  ^ Y
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 1.833  |
+                                  x--------------->
+                                X  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane X = 0
+ 
+ 
+   Now from here we see that the Y component of one boundary corner vector is:
+ 
+           Y Component = +/- 1.0 * tan ( 1.83346495 degrees )
+                       = +/- 0.03201093
+ 
+   Since the field of view is rectangular a similar computation yields the X
+   components. This time look up the Y-axis at the Y=0 plane. The half angle
+   of interest is 0.05729578 degrees.
+ 
+ 
+                                  ^ X
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 0.057  |
+                                  o--------------->
+                                Y  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane Y = 0
+ 
+ 
+           X Component = +/- 1.0 * tan ( 0.05729578 degrees )
+                       = +/- 0.00100000034
+ 
+   Utilizing the ANGLES FOV specification:
+ 
+   Extreme Ultraviolet Spectrograph Low (EUV_LO):
+ 
+           \begindata
+ 
+           INS-82844_FOV_FRAME                 = 'CASSINI_UVIS_EUV'
+           INS-82844_FOV_SHAPE                 = 'RECTANGLE'
+           INS-82844_BORESIGHT                 = (
+ 
+                  0.0000000000000000   0.0000000000000000  +1.0000000000000000
+ 
+                                                 )
+           INS-82844_FOV_CLASS_SPEC            = 'ANGLES'
+           INS-82844_FOV_REF_VECTOR            = (
+ 
+                  0.0000000000000000  +1.0000000000000000   0.0000000000000000
+ 
+                                                 )
+           INS-82844_FOV_REF_ANGLE             = ( 1.83346495 )
+           INS-82844_FOV_CROSS_ANGLE           = ( 0.05729578 )
+           INS-82844_FOV_ANGLE_UNITS           = 'DEGREES'
+ 
+           \begintext
+ 
+ 
+Extreme Ultraviolet Spectrograph Occultation Port (EUV_OCC) FOV Definition
+ 
+   EUV_OCC is also a rectangular field of view. Four boundary corner vectors
+   require visualization. First consider looking down the X-axis at the X=0
+   plane which permits the computation of the Y components of the boundary
+   corner vectors. In this plane the half angle of note is 1.83346495 degrees.
+   (Note we are arbitrarily choosing a vector that terminates in the Z=1
+   plane.)
+ 
+ 
+                                  ^ Y
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 1.833  |
+                                  x--------------->
+                                X  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane X = 0
+ 
+ 
+   Now from here we see that the Y component of one boundary corner vector is:
+ 
+           Y Component = +/- 1.0 * tan ( 1.83346495 degrees )
+                       = +/- 0.03201093
+ 
+   Since the field of view is rectangular a similar computation yields the X
+   components. This time look up the Y-axis at the Y=0 plane. The half angle
+   of interest is 0.229183 degrees.
+ 
+ 
+                                  ^ X
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 0.229  |
+                                  o--------------->
+                                Y  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane Y = 0
+ 
+ 
+           X Component = +/- 1.0 * tan ( 0.229183 degrees )
+                       = +/- 0.0040000193
+ 
+   This results in the following definition:
+ 
+   Extreme Ultraviolet Spectrograph Occultation Port (EUV_OCC):
+ 
+           \begindata
+ 
+           INS-82845_FOV_FRAME                 = 'CASSINI_UVIS_EUV'
+           INS-82845_FOV_SHAPE                 = 'RECTANGLE'
+           INS-82845_BORESIGHT                 = (
+ 
+                  0.0000000000000000   0.0000000000000000  +1.0000000000000000
+ 
+                                                 )
+           INS-82845_FOV_CLASS_SPEC            = 'ANGLES'
+           INS-82845_FOV_REF_VECTOR            = (
+ 
+                  0.0000000000000000  +1.0000000000000000   0.0000000000000000
+ 
+                                                 )
+           INS-82845_FOV_REF_ANGLE             = ( 1.83346495 )
+           INS-82845_FOV_CROSS_ANGLE           = ( 0.229183 )
+           INS-82845_FOV_ANGLE_UNITS           = 'DEGREES'
+ 
+           \begintext
+ 
+ 
+Solar Occultation Port (SOLAR and SOL_OFF) FOV Definitions
+ 
+   SOLAR is a square field of view. Four boundary corner vectors require
+   visualization. First consider looking down the X-axis at the X=0 plane
+   which permits the computation of the Y components of the boundary corner
+   vectors. In this plane the half angle of note is 0.229183118 degrees. (Note
+   we are arbitrarily choosing a vector that terminates in the Z=1 plane.)
+ 
+ 
+                                  ^ Y
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 0.229  |
+                                  x--------------->
+                                X  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane X = 0
+ 
+ 
+   Now from here we see that the Y component of one boundary corner vector is:
+ 
+           Y Component = +/- 1.0 * tan ( 0.229183118 degrees )
+                       = +/- 0.004000021
+ 
+   Since the field of view is square the same computation holds for the X
+   components.
+ 
+   This results in the following FOV definition given below. (Note - we are
+   using radians to prescribe the angular extents.)
+ 
+   Solar Occultation Port (SOLAR) FOV is defined relative to the
+   CASSINI_UVIS_SOLAR frame incorporating the nominal alignment:
+ 
+           \begindata
+ 
+           INS-82848_FOV_FRAME                 = 'CASSINI_UVIS_SOLAR'
+           INS-82848_FOV_SHAPE                 = 'RECTANGLE'
+           INS-82848_BORESIGHT                 = (
+ 
+                  0.0000000000000000   0.0000000000000000  +1.0000000000000000
+ 
+                                                 )
+           INS-82848_FOV_CLASS_SPEC            = 'ANGLES'
+           INS-82848_FOV_REF_VECTOR            = (
+ 
+                  0.0000000000000000  +1.0000000000000000   0.0000000000000000
+ 
+                                                 )
+           INS-82848_FOV_REF_ANGLE             = ( 0.004 )
+           INS-82848_FOV_CROSS_ANGLE           = ( 0.004 )
+           INS-82848_FOV_ANGLE_UNITS           = 'RADIANS'
+ 
+           \begintext
+ 
+   Solar Occultation Port with Offset (SOL_OFF) has the same FOV as SOLAR
+   except that it is defined relative to the CASSINI_UVIS_SOL_OFF frame
+   incorporating the actual alignment:
+ 
+           \begindata
+ 
+           INS-82849_FOV_FRAME                 = 'CASSINI_UVIS_SOL_OFF'
+           INS-82849_FOV_SHAPE                 = 'RECTANGLE'
+           INS-82849_BORESIGHT                 = (
+ 
+                  0.0000000000000000   0.0000000000000000  +1.0000000000000000
+ 
+                     )
+           INS-82849_FOV_CLASS_SPEC            = 'ANGLES'
+           INS-82849_FOV_REF_VECTOR            = (
+ 
+                  0.0000000000000000  +1.0000000000000000   0.0000000000000000
+ 
+                     )
+           INS-82849_FOV_REF_ANGLE             = ( 0.004 )
+           INS-82849_FOV_CROSS_ANGLE           = ( 0.004 )
+           INS-82849_FOV_ANGLE_UNITS           = 'RADIANS'
+ 
+           \begintext
+ 
+ 
+High Speed Photometer (HSP) FOV Definition
+ 
+   HSP is also a rectangular field of view. Four boundary corner vectors
+   require visualization. First consider looking down the X-axis at the X=0
+   plane which permits the computation of the Y components of the boundary
+   corner vectors. In this plane the half angle of note is 0.1833465 degrees.
+   (Note we are arbitrarily choosing a vector that terminates in the Z=1
+   plane.)
+ 
+ 
+                                  ^ Y
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 0.183  |
+                                  x--------------->
+                                X  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane X = 0
+ 
+ 
+   Now from here we see that the Y component of one boundary corner vector is:
+ 
+           Y Component = +/- 1.0 * tan ( 0.1833465 degrees )
+                       = +/- 0.0032000110
+ 
+   Since the field of view is rectangular a similar computation yields the X
+   components. This time look up the Y-axis at the Y=0 plane. The half angle
+   of interest is 0.1718873385 degrees.
+ 
+ 
+                                  ^ X
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/ 0.172  |
+                                  o--------------->
+                                Y  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane Y = 0
+ 
+ 
+           X Component = +/- 1.0 * tan ( 0.1718873385 degrees )
+                       = +/- 0.0030000089
+ 
+   This results in the following FOV definition:
+ 
+   High Speed Photometer (HSP):
+ 
+           \begindata
+ 
+           INS-82846_FOV_FRAME                 = 'CASSINI_UVIS_HSP'
+           INS-82846_FOV_SHAPE                 = 'RECTANGLE'
+           INS-82846_BORESIGHT                 = (
+ 
+                  0.0000000000000000   0.0000000000000000  +1.0000000000000000
+ 
+                                                 )
+           INS-82846_FOV_CLASS_SPEC            = 'ANGLES'
+           INS-82846_FOV_REF_VECTOR            = (
+ 
+                  0.0000000000000000  +1.0000000000000000   0.0000000000000000
+ 
+                                                 )
+           INS-82846_FOV_REF_ANGLE             = ( 0.1833465 )
+           INS-82846_FOV_CROSS_ANGLE           = ( 0.1718873385 )
+           INS-82846_FOV_ANGLE_UNITS           = 'DEGREES'
+ 
+           \begintext
+ 
+ 
+Hydrogen - Deuterium Absorption Cell (HDAC) FOV Definition
+ 
+   HDAC's FOV is circular; it's diameter is 3.2 degrees, looking up the Y-axis
+   in the CASSINI_UVIS_HDAC frame we have: (Note we are arbitrarily choosing a
+   vector that terminates in the Z=1 plane.)
+ 
+ 
+                                  ^ X
+                                  |  ins
+                                  |
+                                  |        /|
+                                  |      /  |
+                                  |    /    |
+                                  |  /    o |
+                                  |/   1.6  |
+                                  o--------------->
+                                Y  \        |    Z
+                                 ins \      |     ins
+                                       \    |
+                                         \  |
+                                           \|
+ 
+                                  |-- 1.0 --|
+                                                Plane Y = 0
+ 
+ 
+   Now from here we see that the X component of one 'boundary corner' vector
+   is:
+ 
+           X Component = 1.0 * tan ( 1.6 degrees )
+                       = 0.027932529197
+ 
+   This yields the following FOV definition:
+ 
+   Hydrogen - Deuterium Absorption Cell (HDAC):
+ 
+           \begindata
+ 
+           INS-82847_FOV_FRAME                 = 'CASSINI_UVIS_HDAC'
+           INS-82847_FOV_SHAPE                 = 'CIRCLE'
+           INS-82847_BORESIGHT                 = (
+ 
+                  0.0000000000000000   0.0000000000000000  +1.0000000000000000
+ 
+                                                 )
+           INS-82847_FOV_CLASS_SPEC            = 'ANGLES'
+           INS-82847_FOV_REF_VECTOR            = (
+ 
+                 +1.0000000000000000   0.0000000000000000   0.0000000000000000
+ 
+                                                 )
+           INS-82847_FOV_REF_ANGLE             = ( 1.6 )
+           INS-82847_FOV_ANGLE_UNITS           = 'DEGREES'
+ 
+           \begintext
+ 
+ 
+UVIS Pixel Parameters
+----------------------------------------------------------
+ 
+   These parameters describe the pixel structure associated with the
+   instruments and their fields of views. In some cases this is a
+   generalization of the notion of pixel, in that instead of representing
+   pixels on a CCD they may represent a collection of individual detectors.
+ 
+ 
+Far Ultraviolet Spectrograph High (FUV_HI)
+ 
+           \begindata
+ 
+           INS-82840_FOV_CENTER_PIXEL  = ( 0, 0 )
+           INS-82840_PIXEL_SAMPLES     = ( 1 )
+           INS-82840_PIXEL_LINES       = ( 1 )
+ 
+           \begintext
+ 
+ 
+Far Ultraviolet Spectrograph Low (FUV_LO)
+ 
+           \begindata
+ 
+           INS-82841_FOV_CENTER_PIXEL  = ( 0, 0 )
+           INS-82841_PIXEL_SAMPLES     = ( 1 )
+           INS-82841_PIXEL_LINES       = ( 1 )
+ 
+           \begintext
+ 
+ 
+Far Ultraviolet Spectrograph Occultation Port (FUV_OCC)
+ 
+           \begindata
+ 
+           INS-82842_FOV_CENTER_PIXEL  = ( 0, 0 )
+           INS-82842_PIXEL_SAMPLES     = ( 1 )
+           INS-82842_PIXEL_LINES       = ( 1 )
+ 
+           \begintext
+ 
+ 
+Extreme Ultraviolet Spectrograph High (EUV_HI)
+ 
+           \begindata
+ 
+           INS-82843_FOV_CENTER_PIXEL  = ( 0, 0 )
+           INS-82843_PIXEL_SAMPLES     = ( 1 )
+           INS-82843_PIXEL_LINES       = ( 1 )
+ 
+           \begintext
+ 
+ 
+Extreme Ultraviolet Spectrograph Low (EUV_LO)
+ 
+           \begindata
+ 
+           INS-82844_FOV_CENTER_PIXEL  = ( 0, 0 )
+           INS-82844_PIXEL_SAMPLES     = ( 1 )
+           INS-82844_PIXEL_LINES       = ( 1 )
+ 
+           \begintext
+ 
+ 
+Extreme Ultraviolet Spectrograph Occultation Port (EUV_OCC)
+ 
+           \begindata
+ 
+           INS-82845_FOV_CENTER_PIXEL  = ( 0, 0 )
+           INS-82845_PIXEL_SAMPLES     = ( 1 )
+           INS-82845_PIXEL_LINES       = ( 1 )
+ 
+           \begintext
+ 
+ 
+Solar Occultation Port (SOLAR and SOL_OFF)
+ 
+           \begindata
+ 
+           INS-82848_FOV_CENTER_PIXEL  = ( 0, 0 )
+           INS-82848_PIXEL_SAMPLES     = ( 1 )
+           INS-82848_PIXEL_LINES       = ( 1 )
+ 
+           INS-82849_FOV_CENTER_PIXEL  = ( 0, 0 )
+           INS-82849_PIXEL_SAMPLES     = ( 1 )
+           INS-82849_PIXEL_LINES       = ( 1 )
+ 
+           \begintext
+ 
+ 
+High Speed Photometer (HSP)
+ 
+           \begindata
+ 
+           INS-82846_FOV_CENTER_PIXEL  = ( 0, 0 )
+           INS-82846_PIXEL_SAMPLES     = ( 1 )
+           INS-82846_PIXEL_LINES       = ( 1 )
+ 
+           \begintext
+ 
+ 
+Hydrogen - Deuterium Absorption Cell (HDAC)
+ 
+           \begindata
+ 
+           INS-82847_FOV_CENTER_PIXEL  = ( 0, 0 )
+           INS-82847_PIXEL_SAMPLES     = ( 1 )
+           INS-82847_PIXEL_LINES       = ( 1 )
+ 
+           \begintext
+ 
+ 
+Instrument Mode Timing
+----------------------------------------------------------
+ 
+   The following values were provided as samples in [5]. The values are
+   defined in [5] as follows:
+ 
+ 
+           ``The initial values for the following keywords are given
+           per instrument number:
+ 
+           INS[instrument number]_[instrument acronym]_MODE_NAME
+           INS[instrument number]_[instrument acronym]_TRIGGER_OFFSET
+           INS[instrument number]_[instrument acronym]_CYCLE_DURATION
+ 
+           INS..._MODE_NAME contains the name of the instrument mode for
+           the INS..._TRIGGER_OFFSET and INS..._CYCLE_DURATION
+           keywords.
+ 
+           INS..._TRIGGER_OFFSET specifies the reference time of the
+           first instrument frame (to be calculated for a footprint)
+           relative to the time of transacting the corresponding TRIGGER
+           command. The units are SFOC duration.
+ 
+           INS..._CYCLE_DURATION specifies the duration between successive
+           instrument frames (from the first one) for the INS..._MODE_NAME.''
+ 
+ 
+ 
+FUV_HI Mode Timing
+ 
+   The following values define the instrument modes and timing for UVIS
+   FUV_HI.
+ 
+           \begindata
+ 
+           INS-82840_MODE_NAME      = 'NOMINAL'
+           INS-82840_TRIGGER_OFFSET = '0:01:00.0'
+           INS-82840_CYCLE_DURATION = '0:01:00.0'
+ 
+           \begintext
+ 
+ 
+FUV_LO Mode Timing
+ 
+   The following values define the instrument modes and timing for UVIS
+   FUV_LO.
+ 
+           \begindata
+ 
+           INS-82841_MODE_NAME      = 'NOMINAL'
+           INS-82841_TRIGGER_OFFSET = '0:01:00.0'
+           INS-82841_CYCLE_DURATION = '0:01:00.0'
+ 
+           \begintext
+ 
+ 
+FUV_OCC Mode Timing
+ 
+   The following values define the instrument modes and timing for the UVIS
+   FUV_OCC.
+ 
+           \begindata
+ 
+           INS-82842_MODE_NAME      = 'NOMINAL'
+           INS-82842_TRIGGER_OFFSET = '0:01:00.0'
+           INS-82842_CYCLE_DURATION = '0:01:00.0'
+ 
+           \begintext
+ 
+ 
+EUV_HI Mode Timing
+ 
+   The following values define the instrument modes and timing for UVIS
+   EUV_HI.
+ 
+           \begindata
+ 
+           INS-82843_MODE_NAME      = 'NOMINAL'
+           INS-82843_TRIGGER_OFFSET = '0:01:00.0'
+           INS-82843_CYCLE_DURATION = '0:01:00.0'
+ 
+           \begintext
+ 
+ 
+EUV_LO Mode Timing
+ 
+   The following values define the instrument modes and timing for UVIS
+   EUV_LO.
+ 
+           \begindata
+ 
+           INS-82844_MODE_NAME      = 'NOMINAL'
+           INS-82844_TRIGGER_OFFSET = '0:01:00.0'
+           INS-82844_CYCLE_DURATION = '0:01:00.0'
+ 
+           \begintext
+ 
+ 
+EUV_OCC Mode Timing
+ 
+   The following values define the instrument modes and timing for the UVIS
+   EUV_OCC.
+ 
+           \begindata
+ 
+           INS-82845_MODE_NAME      = 'NOMINAL'
+           INS-82845_TRIGGER_OFFSET = '0:01:00.0'
+           INS-82845_CYCLE_DURATION = '0:01:00.0'
+ 
+           \begintext
+ 
+ 
+SOLAR Mode Timing
+ 
+   The following values define the instrument modes and timing for the UVIS
+   SOLAR.
+ 
+           \begindata
+ 
+           INS-82848_MODE_NAME      = 'NOMINAL'
+           INS-82848_TRIGGER_OFFSET = '0:01:00.0'
+           INS-82848_CYCLE_DURATION = '0:01:00.0'
+ 
+           INS-82849_MODE_NAME      = 'NOMINAL'
+           INS-82849_TRIGGER_OFFSET = '0:01:00.0'
+           INS-82849_CYCLE_DURATION = '0:01:00.0'
+ 
+           \begintext
+ 
+ 
+HSP Mode Timing
+ 
+   The following values define the instrument modes and timing for the UVIS
+   HSP.
+ 
+           \begindata
+ 
+           INS-82846_MODE_NAME      = 'NOMINAL'
+           INS-82846_TRIGGER_OFFSET = '0:01:00.0'
+           INS-82846_CYCLE_DURATION = '0:01:00.0'
+ 
+           \begintext
+ 
+ 
+HDAC Mode Timing
+ 
+   The following values define the instrument modes and timing for the UVIS
+   HDAC.
+ 
+           \begindata
+ 
+           INS-82847_MODE_NAME      = 'NOMINAL'
+           INS-82847_TRIGGER_OFFSET = '0:01:00.0'
+           INS-82847_CYCLE_DURATION = '0:01:00.0'
+ 
+           \begintext
+ 
+ 
+NAIF ID Code to Name Mapping
+----------------------------------------------------------
+ 
+   The following keywords define names for the corresponding ID Codes. See [4]
+   for details.
+ 
+           \begindata
+ 
+           NAIF_BODY_NAME += ( 'CASSINI_UVIS_FUV_HI' )
+           NAIF_BODY_CODE += ( -82840 )
+ 
+           NAIF_BODY_NAME += ( 'CASSINI_UVIS_FUV_LO' )
+           NAIF_BODY_CODE += ( -82841 )
+ 
+           NAIF_BODY_NAME += ( 'CASSINI_UVIS_FUV_OCC' )
+           NAIF_BODY_CODE += ( -82842 )
+ 
+           NAIF_BODY_NAME += ( 'CASSINI_UVIS_EUV_HI' )
+           NAIF_BODY_CODE += ( -82843 )
+ 
+           NAIF_BODY_NAME += ( 'CASSINI_UVIS_EUV_LO' )
+           NAIF_BODY_CODE += ( -82844 )
+ 
+           NAIF_BODY_NAME += ( 'CASSINI_UVIS_EUV_OCC' )
+           NAIF_BODY_CODE += ( -82845 )
+ 
+           NAIF_BODY_NAME += ( 'CASSINI_UVIS_SOLAR' )
+           NAIF_BODY_CODE += ( -82848 )
+ 
+           NAIF_BODY_NAME += ( 'CASSINI_UVIS_SOL_OFF' )
+           NAIF_BODY_CODE += ( -82849 )
+ 
+           NAIF_BODY_NAME += ( 'CASSINI_UVIS_HSP' )
+           NAIF_BODY_CODE += ( -82846 )
+ 
+           NAIF_BODY_NAME += ( 'CASSINI_UVIS_HDAC' )
+           NAIF_BODY_CODE += ( -82847 )
+ 
+           \begintext
+ 
+ 
+Platform ID
+----------------------------------------------------------
+ 
+   The UVIS instrument is mounted on the Remote Sensing Palette, which is
+   connected to the Cassini Spacecraft body. Therefore the value in the
+   keywords below are -82000.
+ 
+           \begindata
+ 
+           INS-82840_PLATFORM_ID = ( -82000 )
+           INS-82841_PLATFORM_ID = ( -82000 )
+           INS-82842_PLATFORM_ID = ( -82000 )
+           INS-82843_PLATFORM_ID = ( -82000 )
+           INS-82844_PLATFORM_ID = ( -82000 )
+           INS-82845_PLATFORM_ID = ( -82000 )
+           INS-82846_PLATFORM_ID = ( -82000 )
+           INS-82847_PLATFORM_ID = ( -82000 )
+           INS-82848_PLATFORM_ID = ( -82000 )
+ 
+           \begintext
+ 

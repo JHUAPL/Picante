@@ -1,0 +1,15 @@
+/target/
+.classpath
+.project
+.settings/
+/data/
+/idea/
+/.idea/
+/bin/
+/target/
+.DS_Store
+*.DS_Store
+
+# binary kernels in src/main/resources
+*.bc
+*.bsp
